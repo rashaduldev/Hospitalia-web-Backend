@@ -4,7 +4,7 @@ const c = require("../controllers/chatController");
 const asyncHandler = require("../utils/asyncHandler");
 const { requireAuth } = require("../middleware/auth");
 
-const upload = multer({ dest: "uploads/" });
+const upload = multer({ storage: multer.memoryStorage() });
 
 router.post("/threads", requireAuth, asyncHandler(c.createThread));
 router.get("/threads/id/:threadId", requireAuth, asyncHandler(c.getThread));
@@ -14,4 +14,3 @@ router.post("/threads/:threadId/messages", requireAuth, upload.single("file"), a
 router.get("/threads/:threadId/messages", requireAuth, asyncHandler(c.messages));
 
 module.exports = router;
-

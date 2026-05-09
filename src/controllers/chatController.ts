@@ -41,7 +41,7 @@ async function addMessage(req, res) {
     id: await nextId("chatMessages"),
     senderUserId: req.body.senderUserId || req.user?.id,
     body: req.body.body || req.body.message || "",
-    attachmentUrl: req.file ? `/uploads/${req.file.filename}` : req.body.attachmentUrl,
+    attachmentUrl: req.body.attachmentUrl,
     createdAt: new Date(),
   };
   thread.messages.push(message);
@@ -59,4 +59,3 @@ async function messages(req, res) {
 }
 
 module.exports = { createThread, getThread, threadsByDoctor, threadsByPatient, addMessage, messages };
-

@@ -1,6 +1,6 @@
 # Hospitalia Backend
 
-Separate Express + MongoDB backend for the existing Hospitalia Next.js frontend.
+TypeScript Express + MongoDB backend for the existing Hospitalia Next.js frontend.
 
 ## Run locally
 
@@ -10,6 +10,13 @@ npm install
 cp .env.example .env
 npm run seed
 npm run dev
+```
+
+Build and run the compiled server:
+
+```bash
+npm run build
+npm start
 ```
 
 API base URL:

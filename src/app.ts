@@ -9,6 +9,7 @@ const env = require("./config/env");
 const apiRoutes = require("./routes");
 const swaggerSpec = require("./docs/swagger");
 const { notFound, errorHandler } = require("./middleware/errorHandler");
+const connectDB = require("./config/db");
 
 const app = express();
 
@@ -32,7 +33,17 @@ app.get("/health", (_req, res) => {
 
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.get("/api-docs.json", (_req, res) => res.json(swaggerSpec));
-app.use("/api", apiRoutes);
+// Vercel and other serverless runtimes import the Express app directly, so a
+// process-start connection is not guaranteed. Reuse one connection per warm
+// runtime and establish it before every API request when needed.
+app.use("/api", async (_req, _res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    next(err);
+  }
+}, apiRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

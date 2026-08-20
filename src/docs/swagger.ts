@@ -41,6 +41,15 @@ const swaggerSpec = swaggerJsdoc({
             password: { type: "string", example: "Password123" },
           },
         },
+        SpecialityInput: {
+          type: "object",
+          required: ["name"],
+          properties: {
+            name: { type: "string", example: "Dermatology" },
+            description: { type: "string", example: "Skin, hair and nail care" },
+            status: { type: "string", enum: ["ACTIVE", "INACTIVE"], default: "ACTIVE" },
+          },
+        },
       },
     },
     paths: {
@@ -78,6 +87,26 @@ const swaggerSpec = swaggerJsdoc({
             },
           },
           responses: { 200: { description: "Admin login successful" } },
+        },
+      },
+      "/api/speciality/all": {
+        get: {
+          tags: ["Specialities"],
+          summary: "List active specialities for doctor registration",
+          security: [],
+          responses: { 200: { description: "Specialities fetched" } },
+        },
+      },
+      "/api/admin/speciality/create": {
+        post: {
+          tags: ["Specialities"],
+          summary: "Create a speciality (admin authentication required)",
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: { $ref: "#/components/schemas/SpecialityInput" } } },
+          },
+          responses: { 201: { description: "Speciality created" }, 401: { description: "Authentication required" } },
         },
       },
     },

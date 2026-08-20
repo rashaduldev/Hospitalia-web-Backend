@@ -6,7 +6,9 @@ const User = require("../models/User");
 const Doctor = require("../models/Doctor");
 const Patient = require("../models/Patient");
 const Hospital = require("../models/Hospital");
+const Speciality = require("../models/Speciality");
 const { nextId } = require("../utils/ids");
+const { ensureDefaultSpecialities } = require("../utils/defaultSpecialities");
 const { success, error } = require("../utils/apiResponse");
 
 function normalizePhone(countryCode = "+880", phoneNumber = "") {
@@ -29,6 +31,33 @@ async function createUser(body, fallbackType) {
   const countryCode = body.countryCode || "+880";
   const mobileNumber = body.mobileNumber || body.phoneNumber;
   const userType = body.userType || fallbackType || "PATIENT";
+  let specialities = [];
+
+  if (userType === "DOCTOR") {
+    await ensureDefaultSpecialities();
+    const specialityIds = [...new Set<number>((body.professionalInfoRequest?.specialityId || []).map((value) => Number(value)))]
+      .filter((id) => Number.isInteger(id) && id > 0);
+    if (!specialityIds.length) {
+      const validationError = Object.assign(
+        new Error("At least one speciality is required for doctor registration"),
+        { statusCode: 422 },
+      );
+      throw validationError;
+    }
+
+    const records = await Speciality.find({ id: { $in: specialityIds }, status: "ACTIVE" })
+      .select("id name -_id")
+      .lean();
+    if (records.length !== specialityIds.length) {
+      const validationError = Object.assign(
+        new Error("One or more selected specialities are invalid or inactive"),
+        { statusCode: 422 },
+      );
+      throw validationError;
+    }
+    specialities = records;
+  }
+
   const passwordHash = await bcrypt.hash(body.password || "Password123", 10);
   const user = await User.create({
     id: userId,
@@ -44,7 +73,6 @@ async function createUser(body, fallbackType) {
   });
 
   if (userType === "DOCTOR") {
-    const specialityIds = body.professionalInfoRequest?.specialityId || [];
     await Doctor.create({
       id: await nextId("doctors"),
       userId,
@@ -59,7 +87,7 @@ async function createUser(body, fallbackType) {
         onmsRegistrationNumber: body.professionalInfoRequest?.onmsRegistrationNumber || "",
         professionalStatement: body.professionalInfoRequest?.professionalStatement || "",
         workPhoneNumber: body.professionalInfoRequest?.workPhoneNumber || `${countryCode}${mobileNumber}`,
-        specialities: specialityIds.map((id) => ({ id, name: `Speciality ${id}` })),
+        specialities,
       },
     });
   }

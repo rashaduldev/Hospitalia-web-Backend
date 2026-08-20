@@ -7,6 +7,7 @@ const Speciality = require("../models/Speciality");
 const { success, error, paginated } = require("../utils/apiResponse");
 const { pagination, textSearch } = require("../utils/query");
 const { nextId } = require("../utils/ids");
+const { ensureDefaultSpecialities } = require("../utils/defaultSpecialities");
 
 async function listDoctors(req, res) {
   const { page, limit, skip } = pagination(req);
@@ -37,12 +38,21 @@ async function updateDoctor(req, res) {
     phoneNumber: req.body.mobileNumber ? `${req.body.countryCode || ""}${req.body.mobileNumber}` : req.body.phoneNumber,
   };
   if (req.body.professionalInfoRequest) {
+    await ensureDefaultSpecialities();
+    const specialityIds = [...new Set<number>((req.body.professionalInfoRequest.specialityId || []).map((value) => Number(value)))]
+      .filter((id) => Number.isInteger(id) && id > 0);
+    const specialities = await Speciality.find({ id: { $in: specialityIds }, status: "ACTIVE" })
+      .select("id name -_id")
+      .lean();
+    if (specialities.length !== specialityIds.length) {
+      return error(res, "One or more selected specialities are invalid or inactive", 422);
+    }
     update.professionalInfoResponse = {
       designation: req.body.professionalInfoRequest.designation,
       onmsRegistrationNumber: req.body.professionalInfoRequest.onmsRegistrationNumber,
       professionalStatement: req.body.professionalInfoRequest.professionalStatement,
       workPhoneNumber: req.body.professionalInfoRequest.workPhoneNumber,
-      specialities: (req.body.professionalInfoRequest.specialityId || []).map((id) => ({ id, name: `Speciality ${id}` })),
+      specialities,
     };
   }
   const doctor = await Doctor.findOneAndUpdate({ userId }, update, { new: true });
@@ -167,7 +177,8 @@ async function appointmentTypes(_req, res) {
 }
 
 async function specialities(_req, res) {
-  const items = await Speciality.find({ status: "ACTIVE" }).lean();
+  await ensureDefaultSpecialities();
+  const items = await Speciality.find({ status: "ACTIVE" }).sort({ name: 1 }).lean();
   return success(res, paginated(items, 0, items.length || 10, items.length), "Specialities fetched");
 }
 

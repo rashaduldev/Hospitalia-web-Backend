@@ -13,7 +13,13 @@ const connectDB = require("./config/db");
 
 const app = express();
 
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  })
+);
+
 app.use(compression());
 app.use(morgan(env.nodeEnv === "production" ? "combined" : "dev"));
 app.use(cors({
@@ -31,11 +37,24 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", service: "hospitalia-backend" });
 });
 
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+// 2. SWAGGER SETUP WITH CDN (Vercel Serverless static file fix)
+const CSS_URL = "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.min.css";
+
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, {
+    customCssUrl: CSS_URL,
+    customJs: [
+      "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-bundle.js",
+      "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-standalone-preset.js",
+    ],
+  })
+);
+
 app.get("/api-docs.json", (_req, res) => res.json(swaggerSpec));
-// Vercel and other serverless runtimes import the Express app directly, so a
-// process-start connection is not guaranteed. Reuse one connection per warm
-// runtime and establish it before every API request when needed.
+
+// Database connection middleware for /api
 app.use("/api", async (_req, _res, next) => {
   try {
     await connectDB();
@@ -49,4 +68,3 @@ app.use(notFound);
 app.use(errorHandler);
 
 module.exports = app;
-

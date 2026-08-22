@@ -10,8 +10,12 @@ const swaggerSpec = swaggerJsdoc({
     },
     servers: [
       {
-        url: "http://localhost:5000",
+        url: "http://localhost:5001",
         description: "Local development",
+      },
+      {
+        url: "https://hospitalia-web-backend.vercel.app",
+        description: "Production",
       },
     ],
     components: {

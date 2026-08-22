@@ -129,12 +129,10 @@ Public doctor-registration clients can retrieve the active catalogue from `GET /
 - Serve behind TLS and configure monitoring, log retention, and health checks.
 - Do not run the demo seed script in production.
 
-## Frontend integration
 
-Hospitalia Web lives in [`../hospitalia-web-frontend`](../hospitalia-web-frontend). Point its `.env` file at this API:
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:5001
+NEXT_PUBLIC_API_URL=https://hospitalia-web.vercel.app
 ```
 
 ## Contributing

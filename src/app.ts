@@ -22,13 +22,22 @@ app.use(
 
 app.use(compression());
 app.use(morgan(env.nodeEnv === "production" ? "combined" : "dev"));
+
+const allowedOrigins = [
+  ...env.corsOrigin,
+  "https://hospitalia-web-backend.vercel.app",
+  "http://localhost:5000",
+  "http://localhost:5001"
+];
+
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || env.corsOrigin.includes(origin)) return callback(null, true);
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
     return callback(new Error(`CORS blocked origin: ${origin}`));
   },
   credentials: true,
 }));
+
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 }));
@@ -37,7 +46,7 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", service: "hospitalia-backend" });
 });
 
-// 2. SWAGGER SETUP WITH CDN (Vercel Serverless static file fix)
+// Swagger Setup with CDN
 const CSS_URL = "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.min.css";
 
 app.use(

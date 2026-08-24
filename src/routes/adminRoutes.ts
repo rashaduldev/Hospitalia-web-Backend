@@ -10,7 +10,6 @@ router.get("/stats/dashboard", requireAuth, asyncHandler(admin.dashboard));
 
 router.get("/speciality/all", asyncHandler(admin.allSpecialities));
 router.post("/speciality/create", requireAuth, asyncHandler(admin.createSpeciality));
-router.put("/speciality/update/id:id", requireAuth, asyncHandler(admin.updateSpeciality));
 router.put("/speciality/update/id/:id", requireAuth, asyncHandler(admin.updateSpeciality));
 router.delete("/speciality/delete/id/:id", requireAuth, asyncHandler(admin.deleteSpeciality));
 router.get("/speciality/id/:id", asyncHandler(admin.getSpeciality));

@@ -2,12 +2,12 @@
   "name": "hospitalia-backend",
   "version": "1.0.0",
   "description": "Express, MongoDB and Swagger backend for the Hospitalia frontend.",
-  "main": "dist/server.js",
+  "main": "dist/src/server.js",
   "type": "commonjs",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js",
+    "start": "node dist/src/server.js",
     "seed": "tsx src/scripts/seed.ts"
   },
   "dependencies": {

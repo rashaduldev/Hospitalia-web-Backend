@@ -132,6 +132,7 @@ async function createAvailability(req, res) {
     created.push(await Availability.create({
       ...row,
       doctorId: Number(row.doctorId || req.body.doctorId),
+      doctorLocationId: Number(row.doctorLocationId || row.locationId),
       slotDuration,
       status: row.status || (row.availabilityStatus === "UNAVAILABLE" ? "INACTIVE" : "ACTIVE"),
       id: await nextId("availability"),

@@ -10,7 +10,7 @@ const { nextId } = require("../utils/ids");
 async function availableSlots(req, res) {
   const doctorId = Number(req.params.doctorId);
   const locationId = Number(req.params.doctorLocationId);
-  const date = req.query.date || req.query.appointmentDate;
+  const date = req.query.date || req.query.appointmentDate || req.query.requestedDate;
   const dayName = date ? new Date(date).toLocaleDateString("en-US", { weekday: "long" }).toUpperCase() : undefined;
   const availability = await Availability.find({
     doctorId,

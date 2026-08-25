@@ -3,10 +3,10 @@ const auth = require("../controllers/authController");
 const admin = require("../controllers/adminController");
 const users = require("../controllers/userController");
 const asyncHandler = require("../utils/asyncHandler");
-const { requireAuth } = require("../middleware/auth");
+const { requireAuth, requireRole } = require("../middleware/auth");
 
 router.post("/auth/sign-in", asyncHandler(auth.adminSignIn));
-router.get("/stats/dashboard", requireAuth, asyncHandler(admin.dashboard));
+router.get("/stats/dashboard", requireAuth, requireRole("SUPER_ADMIN"), asyncHandler(admin.dashboard));
 
 router.get("/speciality/all", asyncHandler(admin.allSpecialities));
 router.post("/speciality/create", requireAuth, asyncHandler(admin.createSpeciality));
@@ -14,12 +14,12 @@ router.put("/speciality/update/id/:id", requireAuth, asyncHandler(admin.updateSp
 router.delete("/speciality/delete/id/:id", requireAuth, asyncHandler(admin.deleteSpeciality));
 router.get("/speciality/id/:id", asyncHandler(admin.getSpeciality));
 
-router.get("/users/paginated", requireAuth, asyncHandler(users.listUsers));
-router.get("/users/id/:id", requireAuth, asyncHandler(users.getUser));
-router.post("/users/create", requireAuth, asyncHandler(users.createUser));
-router.put("/users/update", requireAuth, asyncHandler(users.updateUser));
-router.patch("/users/status/update", requireAuth, asyncHandler(users.updateStatus));
-router.delete("/users/delete", requireAuth, asyncHandler(users.deleteUser));
+router.get("/users/paginated", requireAuth, requireRole("SUPER_ADMIN"), asyncHandler(users.listUsers));
+router.get("/users/id/:id", requireAuth, requireRole("SUPER_ADMIN"), asyncHandler(users.getUser));
+router.post("/users/create", requireAuth, requireRole("SUPER_ADMIN"), asyncHandler(users.createUser));
+router.put("/users/update", requireAuth, requireRole("SUPER_ADMIN"), asyncHandler(users.updateUser));
+router.patch("/users/status/update", requireAuth, requireRole("SUPER_ADMIN"), asyncHandler(users.updateStatus));
+router.delete("/users/delete", requireAuth, requireRole("SUPER_ADMIN"), asyncHandler(users.deleteUser));
 
 router.get("/roles/paginated", requireAuth, asyncHandler(admin.listRoles));
 router.get("/roles/id/:id", requireAuth, asyncHandler(admin.getRole));

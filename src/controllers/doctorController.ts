@@ -120,17 +120,42 @@ async function availabilityByDoctor(req, res) {
 }
 
 async function createAvailability(req, res) {
-  const rows = Array.isArray(req.body) ? req.body : req.body.availabilitySlots || req.body.slots || [req.body];
+  const rows = Array.isArray(req.body)
+    ? req.body
+    : req.body.availabilitySlots || req.body.slots || req.body.weeklySchedule || [req.body];
   const created = [];
   for (const row of rows) {
-    created.push(await Availability.create({ ...row, id: await nextId("availability") }));
+    const timeSlot = String(row.timeSlot || "");
+    const slotDuration = Number(row.slotDuration) || ({
+      MIN_10: 10, MIN_15: 15, MIN_30: 30, HOUR_1: 60, MIN_90: 90, HOUR_2: 120,
+    }[timeSlot] || 30);
+    created.push(await Availability.create({
+      ...row,
+      doctorId: Number(row.doctorId || req.body.doctorId),
+      slotDuration,
+      status: row.status || (row.availabilityStatus === "UNAVAILABLE" ? "INACTIVE" : "ACTIVE"),
+      id: await nextId("availability"),
+    }));
   }
   return success(res, created.length === 1 ? created[0] : created, "Availability created", 201);
 }
 
 async function updateAvailability(req, res) {
-  const id = Number(req.body.id);
-  const item = await Availability.findOneAndUpdate({ id }, req.body, { new: true });
+  const id = Number(req.body.id || req.body.availabilityIds?.[0]);
+  const schedule = req.body.weeklySchedule?.[0] || req.body;
+  const timeSlot = String(schedule.timeSlot || "");
+  const slotDuration = Number(schedule.slotDuration) || ({
+    MIN_10: 10, MIN_15: 15, MIN_30: 30, HOUR_1: 60, MIN_90: 90, HOUR_2: 120,
+  }[timeSlot] || undefined);
+  const item = await Availability.findOneAndUpdate(
+    { id },
+    {
+      ...schedule,
+      ...(slotDuration ? { slotDuration } : {}),
+      status: schedule.status || (schedule.availabilityStatus === "UNAVAILABLE" ? "INACTIVE" : "ACTIVE"),
+    },
+    { new: true },
+  );
   if (!item) return error(res, "Availability not found", 404);
   return success(res, item, "Availability updated");
 }
@@ -141,11 +166,7 @@ async function deleteAvailability(req, res) {
 }
 
 async function defaultTimeSlots(_req, res) {
-  return success(res, [
-    { startTime: "09:00", endTime: "09:30", slotDuration: 30, available: true },
-    { startTime: "09:30", endTime: "10:00", slotDuration: 30, available: true },
-    { startTime: "10:00", endTime: "10:30", slotDuration: 30, available: true },
-  ], "Default slots fetched");
+  return success(res, ["MIN_10", "MIN_15", "MIN_30", "HOUR_1", "MIN_90", "HOUR_2"], "Default slots fetched");
 }
 
 async function unavailabilityByDoctor(req, res) {

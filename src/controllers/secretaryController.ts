@@ -7,7 +7,13 @@ const { pagination } = require("../utils/query");
 const { nextId } = require("../utils/ids");
 
 async function create(req, res) {
-  const item = await Secretary.create({ ...req.body, id: await nextId("secretaries"), status: req.body.status || "PENDING" });
+  const userId = Number(req.body.userId) || await nextId("users");
+  const item = await Secretary.create({
+    ...req.body,
+    userId,
+    id: await nextId("secretaries"),
+    status: req.body.status || "PENDING",
+  });
   return success(res, item, "Secretary created", 201);
 }
 

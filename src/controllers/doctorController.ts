@@ -83,28 +83,72 @@ async function invite(req, res) {
   return success(res, doctor, "Doctor invited");
 }
 
+function formatLocationResponse(loc) {
+  if (!loc) return null;
+  const newFee = loc.newPatientFee != null && loc.newPatientFee > 0 ? loc.newPatientFee : (loc.fees || 0);
+  const oldFee = loc.oldPatientFee != null && loc.oldPatientFee > 0 ? loc.oldPatientFee : (loc.fees ? Math.round(loc.fees * 0.8) : 0);
+  return {
+    ...loc,
+    locationId: loc.locationId || loc.id,
+    addressLine1: loc.addressLine1 || loc.address || "",
+    newPatientFee: newFee,
+    oldPatientFee: oldFee,
+    fees: loc.fees || newFee,
+    feeCurrency: loc.feeCurrency || "XOF",
+    supportedAppointmentTypes:
+      loc.supportedAppointmentTypes && loc.supportedAppointmentTypes.length > 0
+        ? loc.supportedAppointmentTypes
+        : [
+            { id: 1, name: "Consultation", description: "General in-person consultation" },
+            { id: 2, name: "Follow-up", description: "Review and follow-up visit" },
+          ],
+  };
+}
+
 async function locationsByDoctor(req, res) {
   const doctorId = Number(req.params.doctorId);
   const locations = await Location.find({ $or: [{ doctorId }, { doctorUserId: doctorId }] }).sort({ createdAt: -1 }).lean();
-  return success(res, locations, "Doctor locations fetched");
+  const formatted = locations.map(formatLocationResponse);
+  return success(res, formatted, "Doctor locations fetched");
 }
 
 async function getLocation(req, res) {
   const location = await Location.findOne({ id: Number(req.params.locationId) }).lean();
   if (!location) return error(res, "Location not found", 404);
-  return success(res, location, "Location fetched");
+  return success(res, formatLocationResponse(location), "Location fetched");
 }
 
 async function createLocation(req, res) {
-  const location = await Location.create({ ...req.body, id: await nextId("locations") });
-  return success(res, location, "Location created", 201);
+  const id = await nextId("locations");
+  const newPatientFee = req.body.newPatientFee != null ? Number(req.body.newPatientFee) : (req.body.fees != null ? Number(req.body.fees) : 0);
+  const oldPatientFee = req.body.oldPatientFee != null ? Number(req.body.oldPatientFee) : (req.body.fees != null ? Number(req.body.fees) : 0);
+  const body = {
+    ...req.body,
+    id,
+    locationId: id,
+    address: req.body.address || req.body.addressLine1,
+    addressLine1: req.body.addressLine1 || req.body.address,
+    newPatientFee,
+    oldPatientFee,
+    fees: req.body.fees != null ? Number(req.body.fees) : newPatientFee,
+    feeCurrency: req.body.feeCurrency || "XOF",
+  };
+  const location = await Location.create(body);
+  return success(res, formatLocationResponse(location.toObject ? location.toObject() : location), "Location created", 201);
 }
 
 async function updateLocation(req, res) {
   const id = Number(req.body.id || req.body.locationId);
-  const location = await Location.findOneAndUpdate({ id }, req.body, { new: true });
+  const update = {
+    ...req.body,
+    ...(req.body.addressLine1 ? { addressLine1: req.body.addressLine1, address: req.body.addressLine1 } : {}),
+    ...(req.body.newPatientFee != null ? { newPatientFee: Number(req.body.newPatientFee) } : {}),
+    ...(req.body.oldPatientFee != null ? { oldPatientFee: Number(req.body.oldPatientFee) } : {}),
+    ...(req.body.feeCurrency ? { feeCurrency: req.body.feeCurrency } : {}),
+  };
+  const location = await Location.findOneAndUpdate({ id }, update, { new: true }).lean();
   if (!location) return error(res, "Location not found", 404);
-  return success(res, location, "Location updated");
+  return success(res, formatLocationResponse(location), "Location updated");
 }
 
 async function deleteLocation(req, res) {

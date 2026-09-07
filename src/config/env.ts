@@ -3,7 +3,7 @@ const dotenv = require("dotenv");
 dotenv.config();
 
 const env = {
-  port: Number(process.env.PORT || 5000),
+  port: Number(process.env.PORT || 5001),
   nodeEnv: process.env.NODE_ENV || "development",
   mongoUri: process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/hospitalia",
   jwtAccessSecret: process.env.JWT_ACCESS_SECRET || "dev-access-secret",

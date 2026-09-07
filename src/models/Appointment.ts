@@ -6,6 +6,7 @@ const appointmentSchema = new mongoose.Schema(
     doctorId: { type: Number, required: true, index: true },
     doctorUserId: { type: Number, index: true },
     patientUserId: { type: Number, index: true },
+    patientType: { type: String, enum: ["new", "returning", "NEW", "RETURNING"], default: "new" },
     appointmentTypeId: Number,
     doctorName: String,
     designation: String,

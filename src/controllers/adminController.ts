@@ -1,9 +1,6 @@
 const Speciality = require("../models/Speciality");
 const Role = require("../models/Role");
 const User = require("../models/User");
-const Doctor = require("../models/Doctor");
-const Patient = require("../models/Patient");
-const Hospital = require("../models/Hospital");
 const Appointment = require("../models/Appointment");
 const { success, error, paginated } = require("../utils/apiResponse");
 const { pagination } = require("../utils/query");
@@ -16,7 +13,7 @@ const privileges = [
   { id: 4, name: "SYSTEM_ADMIN", descName: "Manage platform settings" },
 ];
 
-async function dashboard(_req, res) {
+async function dashboard(_req:Request, res:Response) {
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -76,12 +73,12 @@ async function dashboard(_req, res) {
   }, "Dashboard stats fetched");
 }
 
-async function allSpecialities(_req, res) {
+async function allSpecialities(_req: Request, res: Response) {
   const items = await Speciality.find().sort({ name: 1 }).lean();
   return success(res, items, "Specialities fetched");
 }
 
-async function createSpeciality(req, res) {
+async function createSpeciality(req: Request, res: Response) {
   const item = await Speciality.create({ ...req.body, id: await nextId("specialities") });
   return success(res, item, "Speciality created", 201);
 }

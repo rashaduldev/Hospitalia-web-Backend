@@ -34,15 +34,24 @@ async function book(req, res) {
   const slot = req.body.appointmentSlotDto || {};
   const doctor = await Doctor.findOne({ $or: [{ id: Number(req.body.doctorId) }, { userId: Number(req.body.doctorId) }] }).lean();
   const patient = req.body.patientUserId ? await Patient.findOne({ userId: Number(req.body.patientUserId) }).lean() : null;
-  const location = await Location.findOne({ id: Number(slot.locationId) }).lean();
+  const location = await Location.findOne({ $or: [{ id: Number(slot.locationId) }, { locationId: Number(slot.locationId) }] }).lean();
   if (!doctor) return error(res, "Doctor not found", 404);
+
+  const patientType = req.body.patientType || (req.body.isNewPatient === false ? "returning" : "new");
+  let fees = req.body.fees != null && Number(req.body.fees) > 0 ? Number(req.body.fees) : 0;
+  if (!fees && location) {
+    fees = patientType === "returning"
+      ? (location.oldPatientFee != null && location.oldPatientFee > 0 ? location.oldPatientFee : (location.fees ? Math.round(location.fees * 0.8) : 0))
+      : (location.newPatientFee != null && location.newPatientFee > 0 ? location.newPatientFee : (location.fees || 0));
+  }
 
   const appointment = await Appointment.create({
     appointmentId: await nextId("appointments"),
     doctorId: doctor.id,
     doctorUserId: doctor.userId,
     patientUserId: req.body.patientUserId,
-    appointmentTypeId: req.body.appointmentTypeId,
+    patientType,
+    appointmentTypeId: req.body.appointmentTypeId || 1,
     doctorName: `${doctor.firstName || ""} ${doctor.lastName || ""}`.trim(),
     designation: doctor.professionalInfoResponse?.designation,
     patientName: req.body.patientName || `${patient?.firstName || ""} ${patient?.lastName || ""}`.trim(),
@@ -57,7 +66,7 @@ async function book(req, res) {
     startTime: slot.startTime,
     endTime: slot.endTime,
     slotDuration: slot.slotDuration,
-    fees: req.body.fees || location?.fees || 0,
+    fees: Number(fees) || 0,
     notes: req.body.notes,
     bookingSource: req.body.bookingSource || "PATIENT",
     bookedByUserId: req.body.bookedByUserId || req.body.patientUserId,
@@ -134,4 +143,3 @@ module.exports = {
   byDoctorDateLocation,
   cancel,
 };
-

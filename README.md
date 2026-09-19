@@ -128,7 +128,7 @@ Public doctor-registration clients can retrieve the active catalogue from `GET /
 
 - Use a managed MongoDB deployment with backups, restricted network access, and a least-privilege database user.
 - Supply long, unique JWT secrets; never use development defaults.
-- Configure `RESEND_API_KEY` and an `EMAIL_FROM` address on a verified sending domain.
+- Configure `RESEND_API_KEY` and an `EMAIL_FROM` address on a verified sending domain to enable password-reset delivery. Other API capabilities remain available when email is intentionally disabled.
 - Set `NODE_ENV=production` and a precise comma-separated `CORS_ORIGIN` allowlist.
 - Run `npm run build` before deployment; it fails when TypeScript compilation fails.
 - Serve behind TLS and configure monitoring, log retention, and health checks.

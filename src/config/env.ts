@@ -31,9 +31,6 @@ if (env.nodeEnv === "production") {
   if (!process.env.MONGODB_URI) {
     throw new Error("MONGODB_URI is required in production");
   }
-  if (!env.resendApiKey || !env.emailFrom) {
-    throw new Error("RESEND_API_KEY and EMAIL_FROM are required in production");
-  }
 }
 
 module.exports = env;

@@ -445,6 +445,15 @@ try {
 
   await api("global search GET", "GET", "/api/global-search/search?q=" + encodeURIComponent(tag));
   await api("global search POST", "POST", "/api/global-search/search", { body: { search: tag } });
+  const doctorSearch = await api(
+    "frontend doctor full-name search",
+    "GET",
+    "/api/global-search/search?searchType=DOCTOR&searchKeyword=" + encodeURIComponent("Release Doctor") + "&city=Dakar&pageNo=0&pageSize=10",
+  );
+  if (!doctorSearch.payload?.content?.some((item) => item.doctorId === doctorId && item.name === "Release Doctor")) {
+    throw new Error("frontend doctor full-name search did not return the expected normalized result");
+  }
+  passed.push("frontend doctor search response contract");
   await api("doctor cities", "GET", "/api/global-search/cities/doctors");
   await api("hospital cities", "GET", "/api/global-search/cities/hospitals");
   await api("sign-out", "GET", "/api/auth/sign-out", { token: patientToken });

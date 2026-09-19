@@ -393,7 +393,13 @@ function queryParameters(path) {
   if (path.includes("paginated")) query.push({ name: "page", in: "query", schema: { type: "integer", minimum: 0, default: 0 } }, { name: "limit", in: "query", schema: { type: "integer", minimum: 1, default: 10 } });
   if (path.includes("/doctors/paginated") || path.includes("/patients/search") || path.includes("/admin/users/paginated")) query.push({ name: "search", in: "query", schema: { type: "string" } });
   if (path.includes("available-slots") || path.includes("/date/doctorLocationId/")) query.push({ name: "date", in: "query", schema: { type: "string", format: "date" } });
-  if (path.includes("global-search/search")) query.push({ name: "q", in: "query", schema: { type: "string" } }, { name: "city", in: "query", schema: { type: "string" } });
+  if (path.includes("global-search/search")) query.push(
+    { name: "searchKeyword", in: "query", schema: { type: "string" } },
+    { name: "searchType", in: "query", schema: { type: "string", enum: ["DOCTOR", "HOSPITAL"] } },
+    { name: "city", in: "query", schema: { type: "string" } },
+    { name: "pageNo", in: "query", schema: { type: "integer", minimum: 0, default: 0 } },
+    { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 10 } },
+  );
   return query;
 }
 

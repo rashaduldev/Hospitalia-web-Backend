@@ -11,6 +11,7 @@ async function optionalAuth(req, _res, next) {
   try {
     const decoded = jwt.verify(token, env.jwtAccessSecret);
     req.user = await User.findOne({ id: decoded.sub }).lean();
+    if (req.user && Number(decoded.tv || 0) !== Number(req.user.tokenVersion || 0)) req.user = null;
   } catch (_err) {
     req.user = null;
   }
@@ -21,6 +22,7 @@ async function optionalAuth(req, _res, next) {
 async function requireAuth(req, res, next) {
   await optionalAuth(req, res, () => {});
   if (!req.user) return error(res, "Authentication required", 401);
+  if (req.user.status !== "ACTIVE") return error(res, "This account is not active", 403);
   return next();
 }
 

@@ -13,6 +13,7 @@ const secretarySchema = new mongoose.Schema(
     email: String,
     phoneNumber: String,
     invitationToken: String,
+    invitationExpiresAt: Date,
   },
   { timestamps: true },
 );

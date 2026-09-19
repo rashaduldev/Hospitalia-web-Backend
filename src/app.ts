@@ -15,25 +15,42 @@ const app = express();
 
 app.use(
   helmet({
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"],
+        imgSrc: ["'self'", "data:"],
+        fontSrc: ["'self'", "data:", "https://cdnjs.cloudflare.com"],
+        connectSrc: ["'self'"],
+        frameAncestors: ["'none'"],
+      },
+    },
     crossOriginEmbedderPolicy: false,
   })
 );
 
 app.use(compression());
-app.use(morgan(env.nodeEnv === "production" ? "combined" : "dev"));
+morgan.token("safe-url", (req) => {
+  try {
+    return new URL(req.originalUrl || req.url, "http://localhost").pathname;
+  } catch {
+    return String(req.originalUrl || req.url || "").split("?")[0];
+  }
+});
+const productionLogFormat = ':remote-addr - :remote-user [:date[clf]] ":method :safe-url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent"';
+const developmentLogFormat = ":method :safe-url :status :response-time ms - :res[content-length]";
+app.use(morgan(env.nodeEnv === "production" ? productionLogFormat : developmentLogFormat));
 
 const allowedOrigins = [
   ...env.corsOrigin,
-  "https://hospitalia-web-backend.vercel.app",
-  "http://localhost:5000",
-  "http://localhost:5001"
+  "https://hospitalia-web.vercel.app",
 ];
 
 app.use(cors({
   origin(origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error(`CORS blocked origin: ${origin}`));
+    return callback(Object.assign(new Error(`CORS blocked origin: ${origin}`), { statusCode: 403 }));
   },
   credentials: true,
 }));

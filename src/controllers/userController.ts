@@ -47,10 +47,14 @@ async function getUser(req, res) {
 }
 
 async function createUser(req, res) {
+  if (!req.body.password || String(req.body.password).length < 8) {
+    return error(res, "Password must be at least 8 characters", 422);
+  }
   const id = await nextId("users");
-  const passwordHash = await bcrypt.hash(req.body.password || "Password123", 10);
+  const passwordHash = await bcrypt.hash(String(req.body.password), 12);
+  const { password: _password, passwordHash: _passwordHash, id: _id, ...safeBody } = req.body;
   const user = await User.create({
-    ...req.body,
+    ...safeBody,
     id,
     passwordHash,
     userType: req.body.userType || "PATIENT",
@@ -61,7 +65,13 @@ async function createUser(req, res) {
 
 async function updateUser(req, res) {
   const id = Number(req.body.id || req.body.userId);
-  const user = await User.findOneAndUpdate({ id }, req.body, { new: true });
+  const { id: _id, userId: _userId, passwordHash: _passwordHash, password, ...safeBody } = req.body;
+  if (password && String(password).length < 8) return error(res, "Password must be at least 8 characters", 422);
+  const update = {
+    ...safeBody,
+    ...(password ? { passwordHash: await bcrypt.hash(String(password), 12) } : {}),
+  };
+  const user = await User.findOneAndUpdate({ id }, update, { new: true });
   if (!user) return error(res, "User not found", 404);
   return success(res, publicUser(user), "User updated");
 }

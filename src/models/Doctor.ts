@@ -18,6 +18,7 @@ const doctorSchema = new mongoose.Schema(
     qualification: String,
     importedByUserId: Number,
     invitationToken: String,
+    invitationExpiresAt: Date,
     professionalInfoResponse: {
       designation: String,
       onmsRegistrationNumber: String,

@@ -27,6 +27,7 @@ const userSchema = new mongoose.Schema(
     dateOfBirth: String,
     otp: String,
     otpExpiresAt: Date,
+    tokenVersion: { type: Number, default: 0 },
   },
   { timestamps: true },
 );

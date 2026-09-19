@@ -3,3 +3,6 @@ coverage
 dist
 npm-debug.log*
 uploads
+.env
+.env.*
+!.env.example

@@ -7,16 +7,16 @@ async function globalSearch(req, res) {
   const q = req.query.q || req.query.search || req.body?.search || "";
   const city = req.query.city || req.body?.city;
   const doctorFilter = q
-    ? { $or: [
+    ? { verified: true, $or: [
       { firstName: { $regex: q, $options: "i" } },
       { lastName: { $regex: q, $options: "i" } },
       { "professionalInfoResponse.designation": { $regex: q, $options: "i" } },
       { "professionalInfoResponse.specialities.name": { $regex: q, $options: "i" } },
     ] }
-    : {};
+    : { verified: true };
   const hospitalFilter = q ? { hospitalName: { $regex: q, $options: "i" } } : {};
   const [doctors, hospitals] = await Promise.all([
-    Doctor.find(doctorFilter).limit(20).lean(),
+    Doctor.find(doctorFilter).select("-invitationToken -invitationExpiresAt -importedByUserId -__v").limit(20).lean(),
     Hospital.find(hospitalFilter).limit(20).lean(),
   ]);
   const locations = city ? await Location.find({ city: { $regex: city, $options: "i" } }).lean() : [];

@@ -13,7 +13,11 @@ async function connectDB() {
         serverSelectionTimeoutMS: 8_000,
         connectTimeoutMS: 8_000,
       })
-      .then(() => {
+      .then(async () => {
+        // Explicitly initialize the reservation TTL index so crash-abandoned
+        // booking holds are always released, including on serverless cold starts.
+        const AppointmentSlotReservation = require("../models/AppointmentSlotReservation");
+        await AppointmentSlotReservation.init();
         console.info(`MongoDB connected: ${mongoose.connection.name}`);
         return mongoose.connection;
       })

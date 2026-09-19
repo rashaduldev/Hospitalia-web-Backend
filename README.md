@@ -70,6 +70,8 @@ JWT_REFRESH_SECRET=replace-with-a-different-long-random-secret
 JWT_ACCESS_EXPIRES_IN=1h
 JWT_REFRESH_EXPIRES_IN=3d
 CORS_ORIGIN=http://localhost:3000,http://localhost:3001
+RESEND_API_KEY=re_replace_with_your_key
+EMAIL_FROM=Hospitalia <no-reply@your-verified-domain.example>
 ```
 
 Install and start the API:
@@ -98,6 +100,8 @@ With the example configuration, Swagger UI is available at `http://localhost:500
 | `npm run build` | Compile `src` into `dist`. |
 | `npm run start` | Run the compiled production server. |
 | `npm run seed` | Reset and load local demonstration data. **Do not use against production data.** |
+| `npm run test:smoke -- http://localhost:5001` | Exercise every operation in the OpenAPI contract. |
+| `npm run test:integration -- http://localhost:5001` | Run stateful authentication, authorization, scheduling, and cleanup workflows. |
 
 ## API conventions
 
@@ -124,17 +128,11 @@ Public doctor-registration clients can retrieve the active catalogue from `GET /
 
 - Use a managed MongoDB deployment with backups, restricted network access, and a least-privilege database user.
 - Supply long, unique JWT secrets; never use development defaults.
+- Configure `RESEND_API_KEY` and an `EMAIL_FROM` address on a verified sending domain.
 - Set `NODE_ENV=production` and a precise comma-separated `CORS_ORIGIN` allowlist.
 - Run `npm run build` before deployment; it fails when TypeScript compilation fails.
 - Serve behind TLS and configure monitoring, log retention, and health checks.
 - Do not run the demo seed script in production.
-
-
-
-```env
-NEXT_PUBLIC_API_URL=https://hospitalia-web.vercel.app
-```
-
 ## Contributing
 
 1. Keep route, controller, model, Swagger, and frontend contract changes in sync.
@@ -149,4 +147,3 @@ Built and maintained by **Rashadul Dev**.
 ---
 
 Hospitalia Backend is part of the Hospitalia healthcare platform.
-

@@ -111,9 +111,18 @@ const swaggerSpec = swaggerJsdoc({
         },
         ResetPasswordRequest: {
           type: "object",
-          required: ["email", "newPassword"],
+          required: ["email", "resetToken", "newPassword"],
           properties: {
             email: { type: "string", format: "email", example: "user@example.com" },
+            resetToken: { type: "string", description: "Short-lived token returned after OTP verification" },
+            newPassword: { type: "string", format: "password", example: "Password123!" },
+          },
+        },
+        ChangePasswordRequest: {
+          type: "object",
+          required: ["currentPassword", "newPassword"],
+          properties: {
+            currentPassword: { type: "string", format: "password" },
             newPassword: { type: "string", format: "password", example: "Password123!" },
           },
         },
@@ -326,12 +335,12 @@ const swaggerSpec = swaggerJsdoc({
 });
 
 const routeDocs = [
-  ["Auth", "POST", "/api/auth/sign-up"], ["Auth", "POST", "/api/auth/hospital/sign-up"], ["Auth", "POST", "/api/auth/sign-in"], ["Auth", "GET", "/api/auth/sign-out"], ["Auth", "POST", "/api/auth/forgot-password"], ["Auth", "POST", "/api/auth/verify-otp"], ["Auth", "POST", "/api/auth/reset-password"],
+  ["Auth", "POST", "/api/auth/sign-up"], ["Auth", "POST", "/api/auth/hospital/sign-up"], ["Auth", "POST", "/api/auth/sign-in"], ["Auth", "GET", "/api/auth/sign-out"], ["Auth", "POST", "/api/auth/forgot-password"], ["Auth", "POST", "/api/auth/verify-otp"], ["Auth", "POST", "/api/auth/reset-password"], ["Auth", "POST", "/api/auth/change-password"],
   ["Users", "GET", "/api/users/me"],
   ["Admin", "POST", "/api/admin/auth/sign-in"], ["Admin", "GET", "/api/admin/stats/dashboard"], ["Specialities", "GET", "/api/admin/speciality/all"], ["Specialities", "POST", "/api/admin/speciality/create"], ["Specialities", "PUT", "/api/admin/speciality/update/id/{id}"], ["Specialities", "DELETE", "/api/admin/speciality/delete/id/{id}"], ["Specialities", "GET", "/api/admin/speciality/id/{id}"],
   ["Admin Users", "GET", "/api/admin/users/paginated"], ["Admin Users", "GET", "/api/admin/users/id/{id}"], ["Admin Users", "POST", "/api/admin/users/create"], ["Admin Users", "PUT", "/api/admin/users/update"], ["Admin Users", "PATCH", "/api/admin/users/status/update"], ["Admin Users", "DELETE", "/api/admin/users/delete"],
   ["Roles", "GET", "/api/admin/roles/paginated"], ["Roles", "GET", "/api/admin/roles/id/{id}"], ["Roles", "GET", "/api/admin/roles/role-type/all"], ["Roles", "GET", "/api/admin/privileges"], ["Roles", "POST", "/api/admin/roles/create"], ["Roles", "PUT", "/api/admin/roles/update"], ["Roles", "DELETE", "/api/admin/roles/id/{id}/delete"],
-  ["Doctors", "GET", "/api/doctors/paginated"], ["Doctors", "GET", "/api/doctors/id/{userId}"], ["Doctors", "GET", "/api/doctors/{doctorId}"], ["Doctors", "PUT", "/api/doctors/update"], ["Doctors", "PATCH", "/api/doctors/update"], ["Doctors", "GET", "/api/doctors/imported-by/{userId}"], ["Doctors", "GET", "/api/doctors/invitation/info"], ["Doctors", "POST", "/api/doctors/onboard"], ["Doctors", "POST", "/api/doctors/invite/{doctorId}"],
+  ["Doctors", "GET", "/api/doctors/paginated"], ["Doctors", "GET", "/api/doctors/id/{userId}"], ["Doctors", "GET", "/api/doctors/{doctorId}"], ["Doctors", "PUT", "/api/doctors/update"], ["Doctors", "PATCH", "/api/doctors/update"], ["Doctors", "GET", "/api/doctors/imported-by/{userId}"], ["Doctors", "GET", "/api/doctors/import/sample"], ["Doctors", "POST", "/api/doctors/import/xlsx"], ["Doctors", "GET", "/api/doctors/invitation/info"], ["Doctors", "POST", "/api/doctors/onboard"], ["Doctors", "POST", "/api/doctors/invite/{doctorId}"],
   ["Doctor Locations", "GET", "/api/doctors/location/all/{doctorId}"], ["Doctor Locations", "GET", "/api/doctors/location/{locationId}"], ["Doctor Locations", "POST", "/api/doctors/location/create"], ["Doctor Locations", "PUT", "/api/doctors/location/update"], ["Doctor Locations", "DELETE", "/api/doctors/location/delete/locationId/{locationId}/doctorId/{doctorId}"],
   ["Availability", "GET", "/api/doctors/availability/all/doctorId/{doctorId}/status"], ["Availability", "GET", "/api/doctors/availability/all/doctorId/{doctorId}/location/{doctorLocationId}"], ["Availability", "POST", "/api/doctors/availability/create"], ["Availability", "PUT", "/api/doctors/availability/update"], ["Availability", "DELETE", "/api/doctors/availability/{id}"], ["Availability", "GET", "/api/doctors/availability/time-slots/default"],
   ["Unavailability", "GET", "/api/doctors/unavailability/all/doctorId/{doctorId}"], ["Unavailability", "POST", "/api/doctors/unavailability/set"], ["Unavailability", "PUT", "/api/doctors/unavailability/update"], ["Unavailability", "DELETE", "/api/doctors/unavailability/{id}"],
@@ -348,14 +357,15 @@ const routeDocs = [
 
 const publicOperations = new Set([
   "POST /api/auth/sign-up", "POST /api/auth/hospital/sign-up", "POST /api/auth/sign-in", "POST /api/auth/forgot-password", "POST /api/auth/verify-otp", "POST /api/auth/reset-password", "POST /api/admin/auth/sign-in", "GET /api/admin/speciality/all", "GET /api/admin/speciality/id/{id}", "GET /api/speciality/all",
-  "GET /api/doctors/paginated", "GET /api/doctors/id/{userId}", "GET /api/doctors/{doctorId}", "GET /api/doctors/invitation/info", "POST /api/doctors/onboard", "GET /api/doctors/location/all/{doctorId}", "GET /api/doctors/location/{locationId}", "GET /api/doctors/availability/all/doctorId/{doctorId}/status", "GET /api/doctors/availability/all/doctorId/{doctorId}/location/{doctorLocationId}", "GET /api/doctors/availability/time-slots/default", "GET /api/doctors/unavailability/all/doctorId/{doctorId}",
-  "GET /api/appointments/available-slots/doctor/{doctorId}/doctor-location/{doctorLocationId}", "GET /api/appointments/type/all", "GET /api/hospitals/public/{id}", "GET /api/global-search/search", "POST /api/global-search/search", "GET /api/global-search/cities/doctors", "GET /api/global-search/cities/hospitals", "GET /api/secretaries/invitation/info", "POST /api/secretaries/onboard",
+  "GET /api/doctors/paginated", "GET /api/doctors/{doctorId}", "GET /api/doctors/invitation/info", "POST /api/doctors/onboard", "GET /api/doctors/location/all/{doctorId}", "GET /api/doctors/location/{locationId}", "GET /api/doctors/availability/all/doctorId/{doctorId}/status", "GET /api/doctors/availability/all/doctorId/{doctorId}/location/{doctorLocationId}", "GET /api/doctors/availability/time-slots/default", "GET /api/doctors/unavailability/all/doctorId/{doctorId}",
+  "GET /api/appointments/available-slots/doctor/{doctorId}/doctor-location/{doctorLocationId}", "GET /api/appointments/type/all", "GET /api/hospitals/public/{id}", "GET /api/hospital-doctors/hospital/{hospitalId}", "GET /api/global-search/search", "POST /api/global-search/search", "GET /api/global-search/cities/doctors", "GET /api/global-search/cities/hospitals", "GET /api/secretaries/invitation/info", "POST /api/secretaries/onboard",
 ]);
 
 function requestSchema(path) {
   if (path.endsWith("forgot-password")) return "EmailRequest";
   if (path.endsWith("verify-otp")) return "VerifyOtpRequest";
   if (path.endsWith("reset-password")) return "ResetPasswordRequest";
+  if (path.endsWith("change-password")) return "ChangePasswordRequest";
   if (path.includes("book-appointment")) return "AppointmentInput";
   if (path.includes("cancel-appointment")) return null;
   if (path.includes("availability/")) return path.includes("unavailability") ? "UnavailabilityInput" : "AvailabilityInput";
@@ -407,7 +417,7 @@ for (const [tag, method, path] of routeDocs) {
   };
   if (parameters.length) operation.parameters = parameters;
   if (["POST", "PUT", "PATCH"].includes(method) && schemaName) {
-    const contentType = path.includes("/messages") ? "multipart/form-data" : "application/json";
+    const contentType = path.includes("/messages") || path.endsWith("/import/xlsx") ? "multipart/form-data" : "application/json";
     operation.requestBody = { required: true, content: { [contentType]: { schema: { $ref: `#/components/schemas/${schemaName}` } } } };
   }
   if (path.includes("cancel-appointment")) {

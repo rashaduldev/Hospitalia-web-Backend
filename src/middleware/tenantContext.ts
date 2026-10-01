@@ -40,11 +40,17 @@ function requestHost(req) {
   return forwarded || normalizedHost(req.headers.host);
 }
 
+function isPlatformApplicationHost(host) {
+  return host === "hospitalia-web.vercel.app"
+    || host === "hospitalia-demo-control.vercel.app"
+    || host.endsWith("-rashaduldevs-projects.vercel.app");
+}
+
 async function resolveTenant(req, res, next) {
   const signedHost = verifiedProxyHost(req);
   const originHost = normalizedHost(req.headers.origin);
   const apiHost = normalizedHost(req.headers.host);
-  const explicitTenantHost = signedHost || (originHost && originHost !== apiHost ? originHost : "");
+  const explicitTenantHost = signedHost || (originHost && originHost !== apiHost && !isPlatformApplicationHost(originHost) ? originHost : "");
   const host = explicitTenantHost || requestHost(req);
   const { TenantDomain, Tenant, Subscription } = await controlModels();
   const domain = host ? await TenantDomain.findOne({ hostname: host, status: "ACTIVE" }).lean() : null;

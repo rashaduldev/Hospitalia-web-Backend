@@ -50,14 +50,15 @@ async function resolveTenant(req, res, next) {
   const signedHost = verifiedProxyHost(req);
   const originHost = normalizedHost(req.headers.origin);
   const apiHost = normalizedHost(req.headers.host);
-  const explicitTenantHost = signedHost || (originHost && originHost !== apiHost && !isPlatformApplicationHost(originHost) ? originHost : "");
-  const host = explicitTenantHost || (originHost && isPlatformApplicationHost(originHost) ? apiHost : requestHost(req));
+  const platformApplicationRequest = Boolean(originHost && isPlatformApplicationHost(originHost));
+  const explicitTenantHost = signedHost || (originHost && originHost !== apiHost && !platformApplicationRequest ? originHost : "");
+  const host = explicitTenantHost || (platformApplicationRequest ? apiHost : requestHost(req));
   const { TenantDomain, Tenant, Subscription } = await controlModels();
   const domain = host ? await TenantDomain.findOne({ hostname: host, status: "ACTIVE" }).lean() : null;
 
   if (!domain) {
     if (explicitTenantHost) return error(res, "Unknown or inactive tenant domain", 404);
-    if (env.allowLegacyTenant) {
+    if (platformApplicationRequest || env.allowLegacyTenant) {
       req.tenant = null;
       return runWithTenant({ tenantId: null, databaseName: null, legacy: true }, next);
     }

@@ -3,6 +3,7 @@ const { resolveTenant } = require("../middleware/tenantContext");
 
 router.use("/platform", require("./platformRoutes"));
 router.use(resolveTenant);
+router.use("/tenant", require("./tenantWebsiteRoutes"));
 router.use("/tenant", require("./tenantBillingRoutes"));
 router.use("/auth", require("./authRoutes"));
 router.use("/admin", require("./adminRoutes"));

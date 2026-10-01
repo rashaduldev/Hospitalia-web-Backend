@@ -107,7 +107,7 @@ subscriptionSchema.index({ tenantId: 1, createdAt: -1 });
 const auditEventSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true, index: true },
   tenantId: { type: String, index: true },
-  actorType: { type: String, enum: ["PLATFORM_USER", "SYSTEM"], required: true },
+  actorType: { type: String, enum: ["PLATFORM_USER", "TENANT_USER", "SYSTEM"], required: true },
   actorId: String,
   action: { type: String, required: true, index: true },
   targetType: { type: String, required: true },
@@ -152,6 +152,17 @@ const paymentSchema = new mongoose.Schema({
 }, options);
 paymentSchema.index({ tenantId: 1, idempotencyKey: 1 }, { unique: true });
 
+const tenantWebsiteSchema = new mongoose.Schema({
+  id: { type: String, required: true, unique: true, index: true },
+  tenantId: { type: String, required: true, unique: true, index: true },
+  draft: { type: mongoose.Schema.Types.Mixed, required: true },
+  published: { type: mongoose.Schema.Types.Mixed, required: true },
+  status: { type: String, enum: ["DRAFT", "PUBLISHED"], default: "PUBLISHED", index: true },
+  version: { type: Number, default: 1, min: 1 },
+  publishedAt: Date,
+  publishedBy: String,
+}, options);
+
 async function controlModels() {
   const connection = await connectControlPlane();
   const model = (name, schema, collection) => connection.models[name] || connection.model(name, schema, collection);
@@ -164,6 +175,7 @@ async function controlModels() {
     Subscription: model("ControlSubscription", subscriptionSchema, "cp_subscriptions"),
     Invoice: model("ControlInvoice", invoiceSchema, "cp_invoices"),
     Payment: model("ControlPayment", paymentSchema, "cp_payments"),
+    TenantWebsite: model("ControlTenantWebsite", tenantWebsiteSchema, "cp_tenant_websites"),
     AuditEvent: model("ControlAuditEvent", auditEventSchema, "cp_audit_events"),
   };
 }

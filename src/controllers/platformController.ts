@@ -10,6 +10,7 @@ const Counter = require("../models/Counter");
 const { runWithTenant } = require("../tenant/context");
 const { assignTenantAlias } = require("../services/vercelDomainService");
 const { renderInvoicePdf } = require("../services/invoicePdfService");
+const { ensureTenantWebsite } = require("../services/tenantWebsiteService");
 const { platformSecret } = require("../middleware/platformAuth");
 const { success, error, paginated } = require("../utils/apiResponse");
 
@@ -312,6 +313,7 @@ async function provisionTenant(req, res) {
   tenant.status = "ACTIVE";
   tenant.onboardingStatus = "COMPLETED";
   await tenant.save();
+  await ensureTenantWebsite(tenant);
 
   await writeAudit(req, {
     tenantId: tenant.id,

@@ -16,4 +16,4 @@ const appointmentSlotReservationSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-module.exports = mongoose.model("AppointmentSlotReservation", appointmentSlotReservationSchema);
+module.exports = require("../tenant/context").tenantModel("AppointmentSlotReservation", appointmentSlotReservationSchema);

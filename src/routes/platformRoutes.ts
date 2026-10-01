@@ -16,5 +16,15 @@ router.get("/plans", ...superAdmin, asyncHandler(controller.listPlans));
 router.post("/plans", ...superAdmin, asyncHandler(controller.createPlan));
 router.get("/subscriptions", ...superAdmin, asyncHandler(controller.listSubscriptions));
 router.post("/subscriptions", ...superAdmin, asyncHandler(controller.createSubscription));
+router.post("/subscriptions/:id/suspend", ...superAdmin, asyncHandler(controller.suspendSubscription));
+router.post("/subscriptions/:id/reactivate", ...superAdmin, asyncHandler(controller.reactivateSubscription));
+router.post("/subscriptions/:id/cancel", ...superAdmin, asyncHandler(controller.cancelSubscription));
+router.get("/invoices", ...superAdmin, asyncHandler(controller.listInvoices));
+router.post("/invoices", ...superAdmin, asyncHandler(controller.createInvoice));
+router.post("/invoices/:id/issue", ...superAdmin, asyncHandler(controller.issueInvoice));
+router.post("/invoices/:id/payments", ...superAdmin, asyncHandler(controller.submitPayment));
+router.get("/payments", ...superAdmin, asyncHandler(controller.listPayments));
+router.post("/payments/:id/verify", ...superAdmin, asyncHandler(controller.verifyPayment));
+router.post("/payments/:id/reject", ...superAdmin, asyncHandler(controller.rejectPayment));
 
 module.exports = router;

@@ -10,5 +10,5 @@ const specialitySchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-module.exports = mongoose.model("Speciality", specialitySchema);
+module.exports = require("../tenant/context").tenantModel("Speciality", specialitySchema);
 

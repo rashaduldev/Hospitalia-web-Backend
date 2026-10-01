@@ -35,5 +35,5 @@ const locationSchema = new mongoose.Schema(
   { timestamps: true, strict: false },
 );
 
-module.exports = mongoose.model("Location", locationSchema);
+module.exports = require("../tenant/context").tenantModel("Location", locationSchema);
 

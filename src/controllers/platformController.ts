@@ -34,6 +34,28 @@ const subscriptionInput = z.object({
   planId: z.string().uuid(),
   startAt: z.coerce.date().optional(),
 });
+const invoiceInput = z.object({
+  tenantId: z.string().uuid(),
+  subscriptionId: z.string().uuid(),
+  currency: z.string().trim().toUpperCase().length(3),
+  discountMinor: z.number().int().nonnegative().default(0),
+  taxMinor: z.number().int().nonnegative().default(0),
+  dueAt: z.coerce.date().optional(),
+  lineItems: z.array(z.object({
+    description: z.string().trim().min(2).max(200),
+    quantity: z.number().int().min(1).max(1000),
+    unitAmountMinor: z.number().int().nonnegative(),
+  })).min(1).max(50),
+});
+const paymentInput = z.object({
+  method: z.enum(["BANK", "BKASH", "NAGAD", "CASH", "OTHER"]),
+  providerReference: z.string().trim().min(2).max(120),
+  amountMinor: z.number().int().positive(),
+  currency: z.string().trim().toUpperCase().length(3),
+  idempotencyKey: z.string().trim().min(8).max(120),
+  receivedAt: z.coerce.date().optional(),
+});
+const rejectionInput = z.object({ reason: z.string().trim().min(3).max(300) });
 
 function parsed(schema, body, res) {
   const result = schema.safeParse(body);
@@ -196,6 +218,171 @@ async function listSubscriptions(req, res) {
   return success(res, paginated(items, page, limit, total), "Subscriptions fetched");
 }
 
+async function changeSubscriptionStatus(req, res, targetStatus) {
+  const { Subscription } = await controlModels();
+  const allowedFrom = targetStatus === "ACTIVE" ? ["SUSPENDED", "PAST_DUE"] : ["TRIALING", "ACTIVE", "PAST_DUE", "SUSPENDED"];
+  const update = targetStatus === "CANCELLED"
+    ? { $set: { status: "CANCELLED", cancelledAt: new Date(), cancelAtPeriodEnd: false }, $unset: { activeKey: 1, graceEndsAt: 1 } }
+    : { $set: { status: targetStatus }, $unset: { graceEndsAt: 1 } };
+  const item = await Subscription.findOneAndUpdate(
+    { id: req.params.id, status: { $in: allowedFrom } },
+    update,
+    { new: true },
+  );
+  if (!item) return error(res, "Subscription cannot make this transition", 409);
+  await writeAudit(req, {
+    tenantId: item.tenantId,
+    action: `SUBSCRIPTION_${targetStatus}`,
+    targetType: "SUBSCRIPTION",
+    targetId: item.id,
+    metadata: { status: targetStatus },
+  });
+  return success(res, item.toObject(), `Subscription ${targetStatus.toLowerCase()}`);
+}
+
+async function suspendSubscription(req, res) {
+  return changeSubscriptionStatus(req, res, "SUSPENDED");
+}
+
+async function reactivateSubscription(req, res) {
+  return changeSubscriptionStatus(req, res, "ACTIVE");
+}
+
+async function cancelSubscription(req, res) {
+  return changeSubscriptionStatus(req, res, "CANCELLED");
+}
+
+async function createInvoice(req, res) {
+  const body = parsed(invoiceInput, req.body, res);
+  if (!body) return;
+  const { Tenant, Subscription, Invoice } = await controlModels();
+  const [tenant, subscription] = await Promise.all([
+    Tenant.findOne({ id: body.tenantId }).lean(),
+    Subscription.findOne({ id: body.subscriptionId, tenantId: body.tenantId }).lean(),
+  ]);
+  if (!tenant) return error(res, "Tenant not found", 404);
+  if (!subscription) return error(res, "Subscription not found", 404);
+  const lineItems = body.lineItems.map((item) => ({ ...item, totalMinor: item.quantity * item.unitAmountMinor }));
+  const subtotalMinor = lineItems.reduce((sum, item) => sum + item.totalMinor, 0);
+  const totalMinor = subtotalMinor - body.discountMinor + body.taxMinor;
+  if (totalMinor < 0) return error(res, "Invoice total cannot be negative", 422);
+  const invoice = await Invoice.create({
+    id: crypto.randomUUID(),
+    tenantId: body.tenantId,
+    subscriptionId: body.subscriptionId,
+    invoiceNumber: `INV-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${crypto.randomBytes(4).toString("hex").toUpperCase()}`,
+    status: "DRAFT",
+    lineItems,
+    subtotalMinor,
+    discountMinor: body.discountMinor,
+    taxMinor: body.taxMinor,
+    totalMinor,
+    currency: body.currency,
+    dueAt: body.dueAt,
+  });
+  await writeAudit(req, { tenantId: body.tenantId, action: "INVOICE_CREATED", targetType: "INVOICE", targetId: invoice.id, metadata: { invoiceNumber: invoice.invoiceNumber, totalMinor } });
+  return success(res, invoice.toObject(), "Invoice created", 201);
+}
+
+async function issueInvoice(req, res) {
+  const { Invoice } = await controlModels();
+  const now = new Date();
+  const defaultDue = new Date(now.getTime() + 7 * 86400000);
+  const invoice = await Invoice.findOneAndUpdate(
+    { id: req.params.id, status: "DRAFT" },
+    { $set: { status: "ISSUED", issuedAt: now, dueAt: req.body?.dueAt ? new Date(req.body.dueAt) : defaultDue } },
+    { new: true },
+  );
+  if (!invoice) return error(res, "Only a draft invoice can be issued", 409);
+  await writeAudit(req, { tenantId: invoice.tenantId, action: "INVOICE_ISSUED", targetType: "INVOICE", targetId: invoice.id, metadata: { invoiceNumber: invoice.invoiceNumber } });
+  return success(res, invoice.toObject(), "Invoice issued");
+}
+
+async function listInvoices(req, res) {
+  const { page, limit, skip } = listOptions(req);
+  const { Invoice } = await controlModels();
+  const filter = req.query.tenantId ? { tenantId: String(req.query.tenantId) } : {};
+  const [items, total] = await Promise.all([
+    Invoice.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    Invoice.countDocuments(filter),
+  ]);
+  return success(res, paginated(items, page, limit, total), "Invoices fetched");
+}
+
+async function submitPayment(req, res) {
+  const body = parsed(paymentInput, req.body, res);
+  if (!body) return;
+  const { Invoice, Payment } = await controlModels();
+  const invoice = await Invoice.findOne({ id: req.params.id, status: { $in: ["ISSUED", "OVERDUE"] } }).lean();
+  if (!invoice) return error(res, "Issued invoice not found", 404);
+  if (invoice.currency !== body.currency) return error(res, "Payment currency must match invoice currency", 422);
+  const existing = await Payment.findOne({ tenantId: invoice.tenantId, idempotencyKey: body.idempotencyKey }).lean();
+  if (existing) return success(res, existing, "Payment already submitted");
+  const payment = await Payment.create({
+    id: crypto.randomUUID(),
+    tenantId: invoice.tenantId,
+    invoiceId: invoice.id,
+    ...body,
+    receivedAt: body.receivedAt || new Date(),
+    status: "PENDING",
+  });
+  await writeAudit(req, { tenantId: invoice.tenantId, action: "PAYMENT_SUBMITTED", targetType: "PAYMENT", targetId: payment.id, metadata: { invoiceId: invoice.id, amountMinor: payment.amountMinor, method: payment.method } });
+  return success(res, payment.toObject(), "Payment submitted", 201);
+}
+
+async function verifyPayment(req, res) {
+  const { Payment, Invoice, Subscription } = await controlModels();
+  let payment = await Payment.findOne({ id: req.params.id });
+  if (!payment) return error(res, "Payment not found", 404);
+  if (payment.status === "VERIFIED") return success(res, payment.toObject(), "Payment already verified");
+  if (payment.status !== "PENDING") return error(res, "Only a pending payment can be verified", 409);
+  payment.status = "VERIFIED";
+  payment.verifiedAt = new Date();
+  payment.verifiedBy = req.platformUser.id;
+  await payment.save();
+  const invoice = await Invoice.findOne({ id: payment.invoiceId });
+  const totals = await Payment.aggregate([
+    { $match: { invoiceId: payment.invoiceId, status: "VERIFIED" } },
+    { $group: { _id: "$invoiceId", total: { $sum: "$amountMinor" } } },
+  ]);
+  if (invoice && Number(totals[0]?.total || 0) >= Number(invoice.totalMinor)) {
+    invoice.status = "PAID";
+    invoice.paidAt = new Date();
+    await invoice.save();
+    await Subscription.updateOne(
+      { id: invoice.subscriptionId, status: { $in: ["PAST_DUE", "SUSPENDED"] } },
+      { $set: { status: "ACTIVE", activeKey: invoice.tenantId }, $unset: { graceEndsAt: 1 } },
+    );
+  }
+  await writeAudit(req, { tenantId: payment.tenantId, action: "PAYMENT_VERIFIED", targetType: "PAYMENT", targetId: payment.id, metadata: { invoiceId: payment.invoiceId, amountMinor: payment.amountMinor } });
+  return success(res, payment.toObject(), "Payment verified");
+}
+
+async function rejectPayment(req, res) {
+  const body = parsed(rejectionInput, req.body, res);
+  if (!body) return;
+  const { Payment } = await controlModels();
+  const payment = await Payment.findOneAndUpdate(
+    { id: req.params.id, status: "PENDING" },
+    { status: "REJECTED", rejectedAt: new Date(), rejectedBy: req.platformUser.id, rejectionReason: body.reason },
+    { new: true },
+  );
+  if (!payment) return error(res, "Only a pending payment can be rejected", 409);
+  await writeAudit(req, { tenantId: payment.tenantId, action: "PAYMENT_REJECTED", targetType: "PAYMENT", targetId: payment.id, metadata: { reason: body.reason } });
+  return success(res, payment.toObject(), "Payment rejected");
+}
+
+async function listPayments(req, res) {
+  const { page, limit, skip } = listOptions(req);
+  const { Payment } = await controlModels();
+  const filter = req.query.tenantId ? { tenantId: String(req.query.tenantId) } : {};
+  const [items, total] = await Promise.all([
+    Payment.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    Payment.countDocuments(filter),
+  ]);
+  return success(res, paginated(items, page, limit, total), "Payments fetched");
+}
+
 module.exports = {
   signIn,
   me,
@@ -206,4 +393,14 @@ module.exports = {
   listPlans,
   createSubscription,
   listSubscriptions,
+  suspendSubscription,
+  reactivateSubscription,
+  cancelSubscription,
+  createInvoice,
+  issueInvoice,
+  listInvoices,
+  submitPayment,
+  verifyPayment,
+  rejectPayment,
+  listPayments,
 };

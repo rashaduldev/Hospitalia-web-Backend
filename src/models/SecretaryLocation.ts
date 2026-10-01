@@ -14,5 +14,5 @@ const secretaryLocationSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-module.exports = mongoose.model("SecretaryLocation", secretaryLocationSchema);
+module.exports = require("../tenant/context").tenantModel("SecretaryLocation", secretaryLocationSchema);
 

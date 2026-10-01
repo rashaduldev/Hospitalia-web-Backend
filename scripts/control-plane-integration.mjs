@@ -15,7 +15,7 @@ if (!mongoUri) throw new Error("CONTROL_PLANE_MONGODB_URI or MONGODB_URI is requ
 
 const tag = `control-test-${Date.now()}`;
 const password = "ControlPlane!2468";
-const ids = { users: [], tenants: [], domains: [], plans: [], subscriptions: [], audits: [] };
+const ids = { users: [], tenants: [], domains: [], plans: [], subscriptions: [], invoices: [], payments: [], audits: [] };
 let passed = 0;
 
 async function request(name, method, path, { token, body, expected = [200, 201] } = {}) {
@@ -151,6 +151,37 @@ try {
   passed += 1;
   await request("subscription list", "GET", `/api/platform/subscriptions?tenantId=${tenant.payload.id}`, { token: adminToken });
 
+  const invoice = await request("invoice create", "POST", "/api/platform/invoices", {
+    token: adminToken,
+    body: {
+      tenantId: tenant.payload.id,
+      subscriptionId: subscription.payload.id,
+      currency: "BDT",
+      lineItems: [{ description: "Monthly subscription", quantity: 1, unitAmountMinor: 250000 }],
+    },
+  });
+  ids.invoices.push(invoice.payload.id);
+  await request("invoice issue", "POST", `/api/platform/invoices/${invoice.payload.id}/issue`, { token: adminToken, body: {} });
+  const payment = await request("payment submit", "POST", `/api/platform/invoices/${invoice.payload.id}/payments`, {
+    token: adminToken,
+    body: {
+      method: "BKASH",
+      providerReference: `BKASH-${Date.now()}`,
+      amountMinor: 250000,
+      currency: "BDT",
+      idempotencyKey: `control-payment-${Date.now()}`,
+    },
+  });
+  ids.payments.push(payment.payload.id);
+  const verified = await request("payment verify", "POST", `/api/platform/payments/${payment.payload.id}/verify`, { token: adminToken, body: {} });
+  if (verified.payload.status !== "VERIFIED") throw new Error("payment was not verified");
+  passed += 1;
+  const paidInvoice = await db.collection("cp_invoices").findOne({ id: invoice.payload.id });
+  if (paidInvoice?.status !== "PAID") throw new Error("fully paid invoice was not marked paid");
+  passed += 1;
+  await request("subscription suspend", "POST", `/api/platform/subscriptions/${subscription.payload.id}/suspend`, { token: adminToken, body: {} });
+  await request("subscription reactivate", "POST", `/api/platform/subscriptions/${subscription.payload.id}/reactivate`, { token: adminToken, body: {} });
+
   const audits = await db.collection("cp_audit_events").find({ tenantId: tenant.payload.id }).toArray();
   ids.audits.push(...audits.map((item) => item.id));
   if (!audits.some((item) => item.action === "TENANT_CREATED") || !audits.some((item) => item.action === "SUBSCRIPTION_CREATED")) {
@@ -162,6 +193,8 @@ try {
 } finally {
   await Promise.all([
     db.collection("cp_audit_events").deleteMany({ $or: [{ id: { $in: ids.audits } }, { tenantId: { $in: ids.tenants } }] }),
+    db.collection("cp_payments").deleteMany({ id: { $in: ids.payments } }),
+    db.collection("cp_invoices").deleteMany({ id: { $in: ids.invoices } }),
     db.collection("cp_subscriptions").deleteMany({ id: { $in: ids.subscriptions } }),
     db.collection("cp_tenant_domains").deleteMany({ id: { $in: ids.domains } }),
     db.collection("cp_tenants").deleteMany({ id: { $in: ids.tenants } }),

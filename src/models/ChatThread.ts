@@ -22,5 +22,5 @@ const chatThreadSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-module.exports = mongoose.model("ChatThread", chatThreadSchema);
+module.exports = require("../tenant/context").tenantModel("ChatThread", chatThreadSchema);
 

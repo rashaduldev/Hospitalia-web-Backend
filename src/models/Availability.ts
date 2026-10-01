@@ -15,5 +15,5 @@ const availabilitySchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-module.exports = mongoose.model("Availability", availabilitySchema);
+module.exports = require("../tenant/context").tenantModel("Availability", availabilitySchema);
 

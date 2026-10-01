@@ -8,5 +8,5 @@ const counterSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-module.exports = mongoose.model("Counter", counterSchema);
+module.exports = require("../tenant/context").tenantModel("Counter", counterSchema);
 

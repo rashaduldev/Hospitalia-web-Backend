@@ -10,9 +10,11 @@
     "start": "node dist/src/server.js",
     "seed": "tsx src/scripts/seed.ts",
     "platform:bootstrap": "tsx src/scripts/bootstrapPlatformAdmin.ts",
+    "saas:seed-demo": "tsx src/scripts/seedSaasDemo.ts",
     "test:smoke": "node scripts/smoke-api.mjs",
     "test:integration": "node scripts/integration-api.mjs",
-    "test:control-plane": "node scripts/control-plane-integration.mjs"
+    "test:control-plane": "node scripts/control-plane-integration.mjs",
+    "test:tenant-isolation": "node scripts/tenant-isolation.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

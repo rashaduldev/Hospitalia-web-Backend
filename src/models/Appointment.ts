@@ -38,5 +38,5 @@ const appointmentSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-module.exports = mongoose.model("Appointment", appointmentSchema);
+module.exports = require("../tenant/context").tenantModel("Appointment", appointmentSchema);
 

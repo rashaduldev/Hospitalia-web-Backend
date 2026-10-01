@@ -14,5 +14,5 @@ const beneficiarySchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-module.exports = mongoose.model("Beneficiary", beneficiarySchema);
+module.exports = require("../tenant/context").tenantModel("Beneficiary", beneficiarySchema);
 

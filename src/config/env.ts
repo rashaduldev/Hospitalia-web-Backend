@@ -9,6 +9,8 @@ const env = {
   controlPlaneMongoUri: process.env.CONTROL_PLANE_MONGODB_URI || "",
   platformJwtSecret: process.env.PLATFORM_JWT_SECRET || "",
   platformRootDomain: (process.env.PLATFORM_ROOT_DOMAIN || "hospitalia.app").trim().toLowerCase(),
+  tenantProxySecret: process.env.TENANT_PROXY_SECRET || "",
+  allowLegacyTenant: String(process.env.ALLOW_LEGACY_TENANT ?? "true").toLowerCase() === "true",
   jwtAccessSecret: process.env.JWT_ACCESS_SECRET || "dev-access-secret",
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || "dev-refresh-secret",
   jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || "1h",
@@ -33,6 +35,9 @@ if (env.nodeEnv === "production") {
   }
   if (!process.env.MONGODB_URI) {
     throw new Error("MONGODB_URI is required in production");
+  }
+  if (env.tenantProxySecret && env.tenantProxySecret.length < 32) {
+    throw new Error("TENANT_PROXY_SECRET must contain at least 32 characters when configured");
   }
 }
 

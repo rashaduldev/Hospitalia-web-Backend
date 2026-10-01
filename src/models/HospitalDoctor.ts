@@ -12,5 +12,5 @@ const hospitalDoctorSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-module.exports = mongoose.model("HospitalDoctor", hospitalDoctorSchema);
+module.exports = require("../tenant/context").tenantModel("HospitalDoctor", hospitalDoctorSchema);
 

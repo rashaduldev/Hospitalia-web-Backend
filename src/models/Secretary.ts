@@ -18,5 +18,5 @@ const secretarySchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-module.exports = mongoose.model("Secretary", secretarySchema);
+module.exports = require("../tenant/context").tenantModel("Secretary", secretarySchema);
 

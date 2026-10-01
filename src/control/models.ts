@@ -108,6 +108,42 @@ const auditEventSchema = new mongoose.Schema({
   metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
 }, { timestamps: { createdAt: true, updatedAt: false }, strict: true });
 
+const invoiceSchema = new mongoose.Schema({
+  id: { type: String, required: true, unique: true, index: true },
+  tenantId: { type: String, required: true, index: true },
+  subscriptionId: { type: String, required: true, index: true },
+  invoiceNumber: { type: String, required: true, unique: true, index: true },
+  status: { type: String, enum: ["DRAFT", "ISSUED", "PAID", "VOID", "OVERDUE"], default: "DRAFT", index: true },
+  lineItems: [{ description: { type: String, required: true }, quantity: { type: Number, required: true }, unitAmountMinor: { type: Number, required: true }, totalMinor: { type: Number, required: true } }],
+  subtotalMinor: { type: Number, required: true, min: 0 },
+  discountMinor: { type: Number, required: true, min: 0, default: 0 },
+  taxMinor: { type: Number, required: true, min: 0, default: 0 },
+  totalMinor: { type: Number, required: true, min: 0 },
+  currency: { type: String, required: true, uppercase: true },
+  issuedAt: Date,
+  dueAt: Date,
+  paidAt: Date,
+}, options);
+
+const paymentSchema = new mongoose.Schema({
+  id: { type: String, required: true, unique: true, index: true },
+  tenantId: { type: String, required: true, index: true },
+  invoiceId: { type: String, required: true, index: true },
+  method: { type: String, enum: ["BANK", "BKASH", "NAGAD", "CASH", "OTHER"], required: true },
+  providerReference: { type: String, trim: true },
+  amountMinor: { type: Number, required: true, min: 1 },
+  currency: { type: String, required: true, uppercase: true },
+  status: { type: String, enum: ["PENDING", "VERIFIED", "REJECTED", "REFUNDED"], default: "PENDING", index: true },
+  idempotencyKey: { type: String, required: true },
+  receivedAt: { type: Date, required: true },
+  verifiedAt: Date,
+  verifiedBy: String,
+  rejectedAt: Date,
+  rejectedBy: String,
+  rejectionReason: String,
+}, options);
+paymentSchema.index({ tenantId: 1, idempotencyKey: 1 }, { unique: true });
+
 async function controlModels() {
   const connection = await connectControlPlane();
   const model = (name, schema, collection) => connection.models[name] || connection.model(name, schema, collection);
@@ -118,6 +154,8 @@ async function controlModels() {
     Membership: model("ControlMembership", membershipSchema, "cp_memberships"),
     Plan: model("ControlPlan", planSchema, "cp_plans"),
     Subscription: model("ControlSubscription", subscriptionSchema, "cp_subscriptions"),
+    Invoice: model("ControlInvoice", invoiceSchema, "cp_invoices"),
+    Payment: model("ControlPayment", paymentSchema, "cp_payments"),
     AuditEvent: model("ControlAuditEvent", auditEventSchema, "cp_audit_events"),
   };
 }

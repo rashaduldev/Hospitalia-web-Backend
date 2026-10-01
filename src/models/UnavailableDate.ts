@@ -11,5 +11,5 @@ const unavailableDateSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-module.exports = mongoose.model("UnavailableDate", unavailableDateSchema);
+module.exports = require("../tenant/context").tenantModel("UnavailableDate", unavailableDateSchema);
 

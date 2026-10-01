@@ -21,5 +21,5 @@ const roleSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-module.exports = mongoose.model("Role", roleSchema);
+module.exports = require("../tenant/context").tenantModel("Role", roleSchema);
 

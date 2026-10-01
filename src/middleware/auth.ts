@@ -2,6 +2,7 @@ const jwt = require("jsonwebtoken");
 const env = require("../config/env");
 const { error } = require("../utils/apiResponse");
 const User = require("../models/User");
+const { currentTenant } = require("../tenant/context");
 
 async function optionalAuth(req, _res, next) {
   const header = req.headers.authorization || "";
@@ -10,6 +11,11 @@ async function optionalAuth(req, _res, next) {
 
   try {
     const decoded = jwt.verify(token, env.jwtAccessSecret);
+    const tenantId = currentTenant()?.tenantId;
+    if ((tenantId && decoded.tid !== tenantId) || (!tenantId && decoded.tid)) {
+      req.user = null;
+      return next();
+    }
     req.user = await User.findOne({ id: decoded.sub }).lean();
     if (req.user && Number(decoded.tv || 0) !== Number(req.user.tokenVersion || 0)) req.user = null;
   } catch (_err) {

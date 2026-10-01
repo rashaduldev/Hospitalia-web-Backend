@@ -11,6 +11,7 @@ const { nextId } = require("../utils/ids");
 const { ensureDefaultSpecialities } = require("../utils/defaultSpecialities");
 const { success, error } = require("../utils/apiResponse");
 const { emailConfigured, sendPasswordResetEmail } = require("../services/email");
+const { currentTenant } = require("../tenant/context");
 
 function normalizePhone(countryCode = "+880", phoneNumber = "") {
   return {
@@ -20,7 +21,14 @@ function normalizePhone(countryCode = "+880", phoneNumber = "") {
 }
 
 function tokens(user) {
-  const payload = { sub: user.id, userType: user.userType, roles: user.roles, tv: Number(user.tokenVersion || 0) };
+  const tenant = currentTenant();
+  const payload = {
+    sub: user.id,
+    userType: user.userType,
+    roles: user.roles,
+    tv: Number(user.tokenVersion || 0),
+    ...(tenant?.tenantId ? { tid: tenant.tenantId } : {}),
+  };
   return {
     accessToken: jwt.sign(payload, env.jwtAccessSecret, { expiresIn: env.jwtAccessExpiresIn }),
     refreshToken: jwt.sign(payload, env.jwtRefreshSecret, { expiresIn: env.jwtRefreshExpiresIn }),
@@ -223,7 +231,12 @@ async function verifyOtp(req, res) {
   const user = await User.findOne({ email: req.body.email, otp: req.body.otp, otpExpiresAt: { $gt: new Date() } });
   if (!user) return error(res, "Invalid or expired OTP", 400);
   const resetToken = jwt.sign(
-    { sub: user.id, purpose: "password-reset", pwd: crypto.createHash("sha256").update(user.passwordHash).digest("hex") },
+    {
+      sub: user.id,
+      purpose: "password-reset",
+      pwd: crypto.createHash("sha256").update(user.passwordHash).digest("hex"),
+      ...(currentTenant()?.tenantId ? { tid: currentTenant().tenantId } : {}),
+    },
     env.jwtAccessSecret,
     { expiresIn: "10m" },
   );
@@ -243,6 +256,9 @@ async function resetPassword(req, res) {
     return error(res, "Invalid or expired password reset token", 401);
   }
   if (decoded.purpose !== "password-reset") return error(res, "Invalid password reset token", 401);
+  if (currentTenant()?.tenantId && decoded.tid !== currentTenant().tenantId) {
+    return error(res, "Invalid password reset token", 401);
+  }
   const user = await User.findOne({ id: Number(decoded.sub), email: req.body.email });
   if (!user) return error(res, "Invalid password reset token", 401);
   const passwordDigest = crypto.createHash("sha256").update(user.passwordHash).digest("hex");

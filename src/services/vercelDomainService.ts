@@ -13,6 +13,27 @@ async function readJson(response) {
   }
 }
 
+async function ensurePublicAlias(hostname) {
+  const response = await fetch(
+    `https://api.vercel.com/aliases/${encodeURIComponent(hostname)}/protection-bypass${teamQuery()}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${env.vercelApiToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ override: { scope: "alias-protection-override", action: "create" } }),
+      signal: AbortSignal.timeout(15_000),
+    },
+  );
+  const data = await readJson(response);
+  if (!response.ok && response.status !== 409) {
+    const message = data?.error?.message || data?.message || "Vercel could not make the tenant domain public";
+    throw Object.assign(new Error(message), { statusCode: 502 });
+  }
+  return true;
+}
+
 async function assignTenantAlias(hostname) {
   if (!env.vercelApiToken || !env.vercelFrontendDeployment) {
     throw Object.assign(new Error("Vercel domain automation is not configured"), { statusCode: 503 });
@@ -44,13 +65,15 @@ async function assignTenantAlias(hostname) {
       const message = data?.error?.message || data?.message || "The tenant domain is assigned to another deployment";
       throw Object.assign(new Error(message), { statusCode: 409 });
     }
-    return { hostname, deployment, aliasId: current.uid || null, alreadyAssigned: true };
+    await ensurePublicAlias(hostname);
+    return { hostname, deployment, aliasId: current.uid || null, alreadyAssigned: true, publicAccess: true };
   }
   if (!response.ok) {
     const message = data?.error?.message || data?.message || "Vercel could not assign the tenant domain";
     throw Object.assign(new Error(message), { statusCode: 502 });
   }
-  return { hostname, deployment, aliasId: data.uid || null, alreadyAssigned: false };
+  await ensurePublicAlias(hostname);
+  return { hostname, deployment, aliasId: data.uid || null, alreadyAssigned: false, publicAccess: true };
 }
 
 module.exports = { assignTenantAlias };

@@ -11,6 +11,7 @@ router.post("/auth/sign-in", platformSignInLimiter, asyncHandler(controller.sign
 router.get("/me", requirePlatformAuth, asyncHandler(controller.me));
 router.get("/tenants", ...superAdmin, asyncHandler(controller.listTenants));
 router.post("/tenants", ...superAdmin, asyncHandler(controller.createTenant));
+router.post("/tenants/provision", ...superAdmin, asyncHandler(controller.provisionTenant));
 router.get("/tenants/:tenantId", ...superAdmin, asyncHandler(controller.getTenant));
 router.get("/plans", ...superAdmin, asyncHandler(controller.listPlans));
 router.post("/plans", ...superAdmin, asyncHandler(controller.createPlan));

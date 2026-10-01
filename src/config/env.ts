@@ -21,6 +21,9 @@ const env = {
     .filter(Boolean),
   resendApiKey: process.env.RESEND_API_KEY || "",
   emailFrom: process.env.EMAIL_FROM || "",
+  vercelApiToken: process.env.VERCEL_API_TOKEN || "",
+  vercelTeamId: process.env.VERCEL_TEAM_ID || "",
+  vercelFrontendDeployment: process.env.VERCEL_FRONTEND_DEPLOYMENT || "",
 };
 
 if (env.nodeEnv === "production") {

@@ -32,6 +32,11 @@ const tenantSchema = new mongoose.Schema({
   currency: { type: String, default: "BDT" },
   primaryDomain: { type: String, lowercase: true, trim: true },
   onboardingStatus: { type: String, enum: ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"], default: "NOT_STARTED" },
+  owner: {
+    name: { type: String, trim: true },
+    email: { type: String, lowercase: true, trim: true },
+    phone: { type: String, trim: true },
+  },
 }, options);
 
 const tenantDomainSchema = new mongoose.Schema({

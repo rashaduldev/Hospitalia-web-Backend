@@ -5,6 +5,10 @@ const { z } = require("zod");
 const { controlModels } = require("../control/models");
 const { writeAudit } = require("../control/audit");
 const env = require("../config/env");
+const User = require("../models/User");
+const Counter = require("../models/Counter");
+const { runWithTenant } = require("../tenant/context");
+const { assignTenantAlias } = require("../services/vercelDomainService");
 const { platformSecret } = require("../middleware/platformAuth");
 const { success, error, paginated } = require("../utils/apiResponse");
 
@@ -56,6 +60,38 @@ const paymentInput = z.object({
   receivedAt: z.coerce.date().optional(),
 });
 const rejectionInput = z.object({ reason: z.string().trim().min(3).max(300) });
+const strongPassword = z.string().min(10).max(72)
+  .regex(/[a-z]/, "Password must include a lowercase letter")
+  .regex(/[A-Z]/, "Password must include an uppercase letter")
+  .regex(/[0-9]/, "Password must include a number")
+  .regex(/[^A-Za-z0-9]/, "Password must include a symbol");
+const onboardingInput = z.object({
+  tenant: tenantInput,
+  owner: z.object({
+    firstName: z.string().trim().min(2).max(80),
+    lastName: z.string().trim().max(80).default(""),
+    email: z.string().trim().toLowerCase().email().max(160),
+    countryCode: z.string().trim().regex(/^\+[1-9]\d{0,3}$/),
+    mobileNumber: z.string().trim().regex(/^\d{7,15}$/),
+    temporaryPassword: strongPassword,
+  }),
+  planId: z.string().uuid(),
+  billing: z.object({
+    collectNow: z.boolean().default(false),
+    method: z.enum(["BANK", "BKASH", "NAGAD", "CASH", "OTHER"]).default("BANK"),
+    providerReference: z.string().trim().max(120).default(""),
+    discountMinor: z.number().int().nonnegative().default(0),
+    taxMinor: z.number().int().nonnegative().default(0),
+  }).default({}),
+  provisionDomain: z.boolean().default(true),
+}).superRefine((value, ctx) => {
+  if (value.billing.collectNow && value.billing.providerReference.length < 2) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["billing", "providerReference"], message: "Payment reference is required" });
+  }
+  if (env.nodeEnv === "production" && !value.provisionDomain) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["provisionDomain"], message: "Production domains must be provisioned automatically" });
+  }
+});
 
 function parsed(schema, body, res) {
   const result = schema.safeParse(body);
@@ -94,13 +130,217 @@ async function me(req, res) {
   return success(res, { id, name, email, phone, role, status }, "Platform user fetched");
 }
 
+function subscriptionDocument(tenant, plan, start = new Date()) {
+  const trialEnd = plan.trialDays ? new Date(start.getTime() + plan.trialDays * 86400000) : undefined;
+  return {
+    id: crypto.randomUUID(),
+    tenantId: tenant.id,
+    activeKey: tenant.id,
+    planId: plan.id,
+    planVersion: plan.version,
+    status: trialEnd ? "TRIALING" : "ACTIVE",
+    currentPeriodStart: start,
+    currentPeriodEnd: trialEnd || addInterval(start, plan.billingInterval),
+    trialEnd,
+    priceSnapshot: {
+      amountMinor: plan.amountMinor,
+      currency: plan.currency,
+      setupFeeMinor: plan.setupFeeMinor,
+      billingInterval: plan.billingInterval,
+      gracePeriodDays: plan.gracePeriodDays,
+      planCode: plan.code,
+      planName: plan.name,
+      planVersion: plan.version,
+    },
+    entitlementSnapshot: {
+      entitlements: mapSnapshot(plan.entitlements),
+      limits: mapSnapshot(plan.limits),
+    },
+  };
+}
+
+async function bootstrapTenantOwner(tenant, owner) {
+  const mobileNumber = owner.mobileNumber.replace(/^0+/, "");
+  return runWithTenant(
+    { tenantId: tenant.id, tenantSlug: tenant.slug, databaseName: tenant.databaseAlias },
+    async () => {
+      await Promise.all([User.init(), Counter.init()]);
+      const existing = await User.findOne({
+        $or: [
+          { countryCode: owner.countryCode, mobileNumber },
+          { email: owner.email },
+        ],
+      });
+      if (existing) {
+        if (existing.userType !== "ADMIN") {
+          throw Object.assign(new Error("The owner email or phone is already used by a non-admin account"), { statusCode: 409 });
+        }
+        return existing;
+      }
+      const counter = await Counter.findOneAndUpdate(
+        { name: "users" },
+        { $inc: { seq: 1 } },
+        { new: true, upsert: true },
+      );
+      return User.create({
+        id: counter.seq,
+        firstName: owner.firstName,
+        lastName: owner.lastName,
+        email: owner.email,
+        countryCode: owner.countryCode,
+        mobileNumber,
+        passwordHash: await bcrypt.hash(owner.temporaryPassword, 12),
+        userType: "ADMIN",
+        status: "ACTIVE",
+        roles: [{ roleName: "ADMIN", roleType: "ADMIN" }],
+      });
+    },
+  );
+}
+
+async function provisionTenant(req, res) {
+  const body = parsed(onboardingInput, req.body, res);
+  if (!body) return;
+  const { Tenant, TenantDomain, Plan, Subscription, Invoice, Payment } = await controlModels();
+  const plan = await Plan.findOne({ id: body.planId, active: true }).lean();
+  if (!plan) return error(res, "Active plan not found", 404);
+
+  const hostname = `${body.tenant.slug}.${env.platformRootDomain}`;
+  let tenant = await Tenant.findOne({ slug: body.tenant.slug }).select("+databaseAlias");
+  if (tenant?.onboardingStatus === "COMPLETED") {
+    return error(res, "This tenant has already been onboarded", 409);
+  }
+  if (!tenant) {
+    const id = crypto.randomUUID();
+    tenant = await Tenant.create({
+      id,
+      ...body.tenant,
+      databaseAlias: `tenant_${id.replaceAll("-", "").slice(0, 30)}`,
+      primaryDomain: hostname,
+      onboardingStatus: "IN_PROGRESS",
+      owner: {
+        name: `${body.owner.firstName} ${body.owner.lastName}`.trim(),
+        email: body.owner.email,
+        phone: `${body.owner.countryCode}${body.owner.mobileNumber.replace(/^0+/, "")}`,
+      },
+    });
+    await writeAudit(req, { tenantId: id, action: "TENANT_CREATED", targetType: "TENANT", targetId: id, metadata: { slug: body.tenant.slug, source: "ONBOARDING" } });
+  } else {
+    tenant.onboardingStatus = "IN_PROGRESS";
+    tenant.owner = {
+      name: `${body.owner.firstName} ${body.owner.lastName}`.trim(),
+      email: body.owner.email,
+      phone: `${body.owner.countryCode}${body.owner.mobileNumber.replace(/^0+/, "")}`,
+    };
+    await tenant.save();
+  }
+
+  let domain = await TenantDomain.findOne({ tenantId: tenant.id });
+  if (!domain) {
+    domain = await TenantDomain.create({
+      id: crypto.randomUUID(), tenantId: tenant.id, hostname, type: "PLATFORM_SUBDOMAIN", status: "PENDING",
+    });
+  }
+
+  const ownerUser = await bootstrapTenantOwner(tenant, body.owner);
+
+  await Subscription.init();
+  let subscription = await Subscription.findOne({ tenantId: tenant.id, status: { $in: ["TRIALING", "ACTIVE", "PAST_DUE", "SUSPENDED"] } });
+  if (!subscription) subscription = await Subscription.create(subscriptionDocument(tenant, plan));
+
+  let invoice = await Invoice.findOne({ tenantId: tenant.id, subscriptionId: subscription.id }).sort({ createdAt: -1 });
+  if (!invoice) {
+    const lineItems = [
+      { description: `${plan.name} subscription`, quantity: 1, unitAmountMinor: plan.amountMinor, totalMinor: plan.amountMinor },
+      ...(plan.setupFeeMinor ? [{ description: "One-time setup fee", quantity: 1, unitAmountMinor: plan.setupFeeMinor, totalMinor: plan.setupFeeMinor }] : []),
+    ];
+    const subtotalMinor = lineItems.reduce((sum, item) => sum + item.totalMinor, 0);
+    const totalMinor = subtotalMinor - body.billing.discountMinor + body.billing.taxMinor;
+    if (totalMinor < 0) return error(res, "Invoice total cannot be negative", 422);
+    const now = new Date();
+    invoice = await Invoice.create({
+      id: crypto.randomUUID(),
+      tenantId: tenant.id,
+      subscriptionId: subscription.id,
+      invoiceNumber: `INV-${now.toISOString().slice(0, 10).replaceAll("-", "")}-${crypto.randomBytes(4).toString("hex").toUpperCase()}`,
+      status: "ISSUED",
+      lineItems,
+      subtotalMinor,
+      discountMinor: body.billing.discountMinor,
+      taxMinor: body.billing.taxMinor,
+      totalMinor,
+      currency: plan.currency,
+      issuedAt: now,
+      dueAt: new Date(now.getTime() + plan.gracePeriodDays * 86400000),
+    });
+  }
+
+  let payment = null;
+  if (body.billing.collectNow && invoice.totalMinor > 0) {
+    const idempotencyKey = `onboarding:${tenant.id}:${invoice.id}`;
+    payment = await Payment.findOne({ tenantId: tenant.id, idempotencyKey });
+    if (!payment) {
+      payment = await Payment.create({
+        id: crypto.randomUUID(), tenantId: tenant.id, invoiceId: invoice.id,
+        method: body.billing.method, providerReference: body.billing.providerReference,
+        amountMinor: invoice.totalMinor, currency: invoice.currency, status: "VERIFIED",
+        idempotencyKey, receivedAt: new Date(), verifiedAt: new Date(), verifiedBy: req.platformUser.id,
+      });
+    }
+    if (invoice.status !== "PAID") {
+      invoice.status = "PAID";
+      invoice.paidAt = new Date();
+      await invoice.save();
+    }
+  }
+
+  const infrastructure = body.provisionDomain
+    ? await assignTenantAlias(hostname)
+    : { hostname, deployment: null, aliasId: null, skipped: true };
+
+  domain.status = "ACTIVE";
+  domain.verifiedAt = new Date();
+  await domain.save();
+  tenant.status = "ACTIVE";
+  tenant.onboardingStatus = "COMPLETED";
+  await tenant.save();
+
+  await writeAudit(req, {
+    tenantId: tenant.id,
+    action: "TENANT_PROVISIONED",
+    targetType: "TENANT",
+    targetId: tenant.id,
+    metadata: { planId: plan.id, subscriptionId: subscription.id, invoiceId: invoice.id, paymentId: payment?.id || null, hostname },
+  });
+
+  const payload = tenant.toObject();
+  delete payload.databaseAlias;
+  return success(res, {
+    tenant: payload,
+    domain: domain.toObject(),
+    subscription: subscription.toObject(),
+    invoice: invoice.toObject(),
+    payment: payment?.toObject() || null,
+    owner: {
+      userId: ownerUser.id,
+      name: `${ownerUser.firstName} ${ownerUser.lastName}`.trim(),
+      email: ownerUser.email,
+      countryCode: ownerUser.countryCode,
+      mobileNumber: ownerUser.mobileNumber,
+      temporaryPassword: body.owner.temporaryPassword,
+    },
+    infrastructure,
+    loginUrl: `https://${hostname}/en/admin/login`,
+  }, "Tenant onboarding completed", 201);
+}
+
 async function createTenant(req, res) {
   const body = parsed(tenantInput, req.body, res);
   if (!body) return;
   const { Tenant, TenantDomain } = await controlModels();
   const id = crypto.randomUUID();
   const hostname = `${body.slug}.${env.platformRootDomain}`;
-  const tenant = await Tenant.create({ id, ...body, databaseAlias: `tenant_${id.replaceAll("-", "")}`, primaryDomain: hostname });
+  const tenant = await Tenant.create({ id, ...body, databaseAlias: `tenant_${id.replaceAll("-", "").slice(0, 30)}`, primaryDomain: hostname });
   try {
     await TenantDomain.create({ id: crypto.randomUUID(), tenantId: id, hostname, type: "PLATFORM_SUBDOMAIN", status: "PENDING" });
   } catch (err) {
@@ -387,6 +627,7 @@ module.exports = {
   signIn,
   me,
   createTenant,
+  provisionTenant,
   listTenants,
   getTenant,
   createPlan,

@@ -14,6 +14,7 @@
     "test:smoke": "node scripts/smoke-api.mjs",
     "test:integration": "node scripts/integration-api.mjs",
     "test:control-plane": "node scripts/control-plane-integration.mjs",
+    "test:onboarding": "node scripts/onboarding-integration.mjs",
     "test:tenant-isolation": "node scripts/tenant-isolation.mjs"
   },
   "dependencies": {

@@ -59,9 +59,19 @@ const allowedOrigins = [
   "https://hospitalia-web.vercel.app",
 ];
 
+function isTenantPreviewOrigin(origin) {
+  try {
+    const url = new URL(origin);
+    return url.protocol === "https:"
+      && /^hospitalia-demo-[a-z0-9-]+\.vercel\.app$/.test(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    if (!origin || allowedOrigins.includes(origin) || isTenantPreviewOrigin(origin)) return callback(null, true);
     return callback(Object.assign(new Error(`CORS blocked origin: ${origin}`), { statusCode: 403 }));
   },
   credentials: true,

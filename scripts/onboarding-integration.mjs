@@ -81,7 +81,7 @@ try {
 
   const tenantDb = connection.useDb(tenantDatabase);
   const owner = await tenantDb.collection("users").findOne({ userType: "ADMIN" });
-  if (!owner || owner.passwordHash === ownerPassword || owner.mobileNumber !== "1603010103") throw new Error("owner bootstrap is invalid");
+  if (!owner || owner.passwordHash === ownerPassword || owner.mobileNumber !== "1603010103" || owner.roles?.[0]?.roleType !== "SUPER_ADMIN") throw new Error("owner bootstrap is invalid");
   passed += 1;
   const adminLogin = await request("tenant admin login", "POST", "/api/admin/auth/sign-in", {
     tenantHost: hostname,

@@ -192,7 +192,7 @@ async function bootstrapTenantOwner(tenant, owner) {
         passwordHash: await bcrypt.hash(owner.temporaryPassword, 12),
         userType: "ADMIN",
         status: "ACTIVE",
-        roles: [{ roleName: "ADMIN", roleType: "ADMIN" }],
+        roles: [{ roleName: "TENANT_ADMIN", roleType: "SUPER_ADMIN" }],
       });
     },
   );

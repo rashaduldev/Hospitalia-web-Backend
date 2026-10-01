@@ -50,8 +50,9 @@ async function resolveTenant(req, res, next) {
   const signedHost = verifiedProxyHost(req);
   const originHost = normalizedHost(req.headers.origin);
   const apiHost = normalizedHost(req.headers.host);
-  const platformApplicationRequest = Boolean(originHost && isPlatformApplicationHost(originHost));
-  const explicitTenantHost = signedHost || (originHost && originHost !== apiHost && !platformApplicationRequest ? originHost : "");
+  const signedPlatformHost = Boolean(signedHost && isPlatformApplicationHost(signedHost));
+  const platformApplicationRequest = signedPlatformHost || Boolean(originHost && isPlatformApplicationHost(originHost));
+  const explicitTenantHost = (signedHost && !signedPlatformHost ? signedHost : "") || (originHost && originHost !== apiHost && !platformApplicationRequest ? originHost : "");
   const host = explicitTenantHost || (platformApplicationRequest ? apiHost : requestHost(req));
   const { TenantDomain, Tenant, Subscription } = await controlModels();
   const domain = host ? await TenantDomain.findOne({ hostname: host, status: "ACTIVE" }).lean() : null;

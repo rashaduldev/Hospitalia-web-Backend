@@ -13,6 +13,13 @@ const connectDB = require("./config/db");
 
 const app = express();
 
+app.use((req, res, next) => {
+  const incoming = String(req.headers["x-request-id"] || "").trim();
+  req.id = /^[A-Za-z0-9._:-]{8,100}$/.test(incoming) ? incoming : require("crypto").randomUUID();
+  res.setHeader("X-Request-Id", req.id);
+  next();
+});
+
 // Vercel terminates TLS and forwards the original client address. Trust one
 // proxy hop so express-rate-limit keys requests by the real client IP instead
 // of rejecting the platform's X-Forwarded-For header.

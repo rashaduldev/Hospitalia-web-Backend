@@ -1,5 +1,6 @@
 const router = require("express").Router();
 
+router.use("/platform", require("./platformRoutes"));
 router.use("/auth", require("./authRoutes"));
 router.use("/admin", require("./adminRoutes"));
 router.use("/users", require("./userRoutes"));

@@ -14,6 +14,14 @@ async function readJson(response) {
 }
 
 async function ensurePublicAlias(hostname) {
+  const lookup = await fetch(
+    `https://api.vercel.com/v4/aliases/${encodeURIComponent(hostname)}${teamQuery()}`,
+    { headers: { Authorization: `Bearer ${env.vercelApiToken}` }, signal: AbortSignal.timeout(15_000) },
+  );
+  if (lookup.ok) {
+    const current = await readJson(lookup);
+    if (current?.protectionBypass) return true;
+  }
   const response = await fetch(
     `https://api.vercel.com/aliases/${encodeURIComponent(hostname)}/protection-bypass${teamQuery()}`,
     {

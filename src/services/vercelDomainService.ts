@@ -39,9 +39,18 @@ async function assignTenantAlias(hostname) {
     throw Object.assign(new Error("Vercel domain automation is not configured"), { statusCode: 503 });
   }
 
-  const deployment = env.vercelFrontendDeployment
+  const configuredDeployment = env.vercelFrontendDeployment
     .replace(/^https?:\/\//, "")
     .replace(/\/$/, "");
+  let deployment = configuredDeployment;
+  const sourceLookup = await fetch(
+    `https://api.vercel.com/v4/aliases/${encodeURIComponent(configuredDeployment)}${teamQuery()}`,
+    { headers: { Authorization: `Bearer ${env.vercelApiToken}` }, signal: AbortSignal.timeout(15_000) },
+  );
+  if (sourceLookup.ok) {
+    const source = await readJson(sourceLookup);
+    deployment = source?.deployment?.url || configuredDeployment;
+  }
   const response = await fetch(
     `https://api.vercel.com/v2/deployments/${encodeURIComponent(deployment)}/aliases${teamQuery()}`,
     {

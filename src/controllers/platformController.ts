@@ -175,6 +175,15 @@ async function bootstrapTenantOwner(tenant, owner) {
         if (existing.userType !== "ADMIN") {
           throw Object.assign(new Error("The owner email or phone is already used by a non-admin account"), { statusCode: 409 });
         }
+        existing.firstName = owner.firstName;
+        existing.lastName = owner.lastName;
+        existing.email = owner.email;
+        existing.countryCode = owner.countryCode;
+        existing.mobileNumber = mobileNumber;
+        existing.passwordHash = await bcrypt.hash(owner.temporaryPassword, 12);
+        existing.status = "ACTIVE";
+        existing.roles = [{ roleName: "TENANT_ADMIN", roleType: "SUPER_ADMIN" }];
+        await existing.save();
         return existing;
       }
       const counter = await Counter.findOneAndUpdate(
@@ -207,9 +216,6 @@ async function provisionTenant(req, res) {
 
   const hostname = `${body.tenant.slug}.${env.platformRootDomain}`;
   let tenant = await Tenant.findOne({ slug: body.tenant.slug }).select("+databaseAlias");
-  if (tenant?.onboardingStatus === "COMPLETED") {
-    return error(res, "This tenant has already been onboarded", 409);
-  }
   if (!tenant) {
     const id = crypto.randomUUID();
     tenant = await Tenant.create({

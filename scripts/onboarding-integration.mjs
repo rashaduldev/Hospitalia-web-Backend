@@ -90,14 +90,13 @@ try {
   if (!adminLogin.payload.accessToken) throw new Error("tenant admin token missing");
   passed += 1;
 
-  await request("completed tenant cannot duplicate", "POST", "/api/platform/tenants/provision", {
+  await request("completed tenant retry is idempotent", "POST", "/api/platform/tenants/provision", {
     token,
     body: {
       tenant: { slug: tag, legalName: "Onboarding Test Hospital Limited", displayName: "Onboarding Test Hospital", timezone: "Asia/Dhaka", currency: "BDT" },
       owner: { firstName: "Tenant", lastName: "Owner", email: `${tag}-owner@example.com`, countryCode: "+880", mobileNumber: "1603010103", temporaryPassword: ownerPassword },
       planId, billing: { collectNow: true, method: "BKASH", providerReference: "DUPLICATE" }, provisionDomain: false,
     },
-    expected: [409],
   });
   const invoices = await db.collection("cp_invoices").countDocuments({ tenantId });
   const payments = await db.collection("cp_payments").countDocuments({ tenantId });

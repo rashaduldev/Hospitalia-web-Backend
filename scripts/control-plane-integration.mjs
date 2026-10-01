@@ -179,13 +179,37 @@ try {
   const paidInvoice = await db.collection("cp_invoices").findOne({ id: invoice.payload.id });
   if (paidInvoice?.status !== "PAID") throw new Error("fully paid invoice was not marked paid");
   passed += 1;
-  await request("subscription suspend", "POST", `/api/platform/subscriptions/${subscription.payload.id}/suspend`, { token: adminToken, body: {} });
+  const pdfResponse = await fetch(`${baseUrl}/api/platform/invoices/${invoice.payload.id}/pdf`, {
+    headers: { Authorization: `Bearer ${adminToken}` },
+    signal: AbortSignal.timeout(20_000),
+  });
+  const pdfBytes = new Uint8Array(await pdfResponse.arrayBuffer());
+  if (pdfResponse.status !== 200 || pdfResponse.headers.get("content-type") !== "application/pdf" || new TextDecoder().decode(pdfBytes.slice(0, 4)) !== "%PDF") {
+    throw new Error("invoice PDF endpoint did not return a valid PDF document");
+  }
+  passed += 1;
+  await request("subscription suspension reason required", "POST", `/api/platform/subscriptions/${subscription.payload.id}/suspend`, { token: adminToken, body: {}, expected: [422] });
+  const suspensionReason = "Subscription payment remains overdue after the grace period.";
+  await request("subscription suspend", "POST", `/api/platform/subscriptions/${subscription.payload.id}/suspend`, { token: adminToken, body: { reason: suspensionReason } });
+  const suspendedSubscription = await db.collection("cp_subscriptions").findOne({ id: subscription.payload.id });
+  if (suspendedSubscription?.suspensionReason !== suspensionReason || !suspendedSubscription?.suspendedAt || suspendedSubscription?.suspendedBy !== adminId) {
+    throw new Error("subscription suspension metadata was not stored");
+  }
+  passed += 1;
   await request("subscription reactivate", "POST", `/api/platform/subscriptions/${subscription.payload.id}/reactivate`, { token: adminToken, body: {} });
+  const reactivatedSubscription = await db.collection("cp_subscriptions").findOne({ id: subscription.payload.id });
+  if (reactivatedSubscription?.suspensionReason || reactivatedSubscription?.suspendedAt || reactivatedSubscription?.suspendedBy) {
+    throw new Error("subscription suspension metadata was not cleared on reactivation");
+  }
+  passed += 1;
 
   const audits = await db.collection("cp_audit_events").find({ tenantId: tenant.payload.id }).toArray();
   ids.audits.push(...audits.map((item) => item.id));
-  if (!audits.some((item) => item.action === "TENANT_CREATED") || !audits.some((item) => item.action === "SUBSCRIPTION_CREATED")) {
-    throw new Error("required tenant/subscription audit events were not written");
+  if (!audits.some((item) => item.action === "TENANT_CREATED")
+    || !audits.some((item) => item.action === "SUBSCRIPTION_CREATED")
+    || !audits.some((item) => item.action === "INVOICE_PDF_DOWNLOADED")
+    || !audits.some((item) => item.action === "SUBSCRIPTION_SUSPENDED" && item.metadata?.reason === suspensionReason)) {
+    throw new Error("required tenant/subscription/invoice audit events were not written");
   }
   passed += 1;
 

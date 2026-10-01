@@ -21,6 +21,7 @@ router.post("/subscriptions/:id/suspend", ...superAdmin, asyncHandler(controller
 router.post("/subscriptions/:id/reactivate", ...superAdmin, asyncHandler(controller.reactivateSubscription));
 router.post("/subscriptions/:id/cancel", ...superAdmin, asyncHandler(controller.cancelSubscription));
 router.get("/invoices", ...superAdmin, asyncHandler(controller.listInvoices));
+router.get("/invoices/:id/pdf", ...superAdmin, asyncHandler(controller.downloadInvoicePdf));
 router.post("/invoices", ...superAdmin, asyncHandler(controller.createInvoice));
 router.post("/invoices/:id/issue", ...superAdmin, asyncHandler(controller.issueInvoice));
 router.post("/invoices/:id/payments", ...superAdmin, asyncHandler(controller.submitPayment));

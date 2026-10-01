@@ -9,6 +9,7 @@ const User = require("../models/User");
 const Counter = require("../models/Counter");
 const { runWithTenant } = require("../tenant/context");
 const { assignTenantAlias } = require("../services/vercelDomainService");
+const { renderInvoicePdf } = require("../services/invoicePdfService");
 const { platformSecret } = require("../middleware/platformAuth");
 const { success, error, paginated } = require("../utils/apiResponse");
 
@@ -60,6 +61,7 @@ const paymentInput = z.object({
   receivedAt: z.coerce.date().optional(),
 });
 const rejectionInput = z.object({ reason: z.string().trim().min(3).max(300) });
+const suspensionInput = z.object({ reason: z.string().trim().min(5).max(500) });
 const strongPassword = z.string().min(10).max(72)
   .regex(/[a-z]/, "Password must include a lowercase letter")
   .regex(/[A-Z]/, "Password must include an uppercase letter")
@@ -464,12 +466,18 @@ async function listSubscriptions(req, res) {
   return success(res, paginated(items, page, limit, total), "Subscriptions fetched");
 }
 
-async function changeSubscriptionStatus(req, res, targetStatus) {
+async function changeSubscriptionStatus(req, res, targetStatus, context: { reason?: string } = {}) {
   const { Subscription } = await controlModels();
-  const allowedFrom = targetStatus === "ACTIVE" ? ["SUSPENDED", "PAST_DUE"] : ["TRIALING", "ACTIVE", "PAST_DUE", "SUSPENDED"];
+  const allowedFrom = targetStatus === "ACTIVE"
+    ? ["SUSPENDED", "PAST_DUE"]
+    : targetStatus === "SUSPENDED"
+      ? ["TRIALING", "ACTIVE", "PAST_DUE"]
+      : ["TRIALING", "ACTIVE", "PAST_DUE", "SUSPENDED"];
   const update = targetStatus === "CANCELLED"
     ? { $set: { status: "CANCELLED", cancelledAt: new Date(), cancelAtPeriodEnd: false }, $unset: { activeKey: 1, graceEndsAt: 1 } }
-    : { $set: { status: targetStatus }, $unset: { graceEndsAt: 1 } };
+    : targetStatus === "SUSPENDED"
+      ? { $set: { status: targetStatus, suspendedAt: new Date(), suspendedBy: req.platformUser.id, suspensionReason: context.reason }, $unset: { graceEndsAt: 1 } }
+      : { $set: { status: targetStatus }, $unset: { graceEndsAt: 1, suspendedAt: 1, suspendedBy: 1, suspensionReason: 1 } };
   const item = await Subscription.findOneAndUpdate(
     { id: req.params.id, status: { $in: allowedFrom } },
     update,
@@ -481,13 +489,15 @@ async function changeSubscriptionStatus(req, res, targetStatus) {
     action: `SUBSCRIPTION_${targetStatus}`,
     targetType: "SUBSCRIPTION",
     targetId: item.id,
-    metadata: { status: targetStatus },
+    metadata: { status: targetStatus, ...(context.reason ? { reason: context.reason } : {}) },
   });
   return success(res, item.toObject(), `Subscription ${targetStatus.toLowerCase()}`);
 }
 
 async function suspendSubscription(req, res) {
-  return changeSubscriptionStatus(req, res, "SUSPENDED");
+  const body = parsed(suspensionInput, req.body, res);
+  if (!body) return;
+  return changeSubscriptionStatus(req, res, "SUSPENDED", body);
 }
 
 async function reactivateSubscription(req, res) {
@@ -553,6 +563,43 @@ async function listInvoices(req, res) {
     Invoice.countDocuments(filter),
   ]);
   return success(res, paginated(items, page, limit, total), "Invoices fetched");
+}
+
+async function downloadInvoicePdf(req, res) {
+  const { Invoice, Tenant, Subscription, Payment } = await controlModels();
+  const invoice = await Invoice.findOne({ id: req.params.id }).lean();
+  if (!invoice) return error(res, "Invoice not found", 404);
+  const [tenant, subscription, payments] = await Promise.all([
+    Tenant.findOne({ id: invoice.tenantId }).lean(),
+    Subscription.findOne({ id: invoice.subscriptionId, tenantId: invoice.tenantId }).lean(),
+    Payment.find({ invoiceId: invoice.id, status: "VERIFIED" }).sort({ verifiedAt: 1 }).lean(),
+  ]);
+  if (!tenant) return error(res, "Invoice customer not found", 404);
+  const amountPaidMinor = payments.reduce((sum, payment) => sum + Number(payment.amountMinor || 0), 0);
+  const balanceDueMinor = Math.max(Number(invoice.totalMinor || 0) - amountPaidMinor, 0);
+  const generatedAt = new Date();
+  const pdf = await renderInvoicePdf({
+    invoice: { ...invoice, amountPaidMinor, balanceDueMinor },
+    tenant,
+    subscription,
+    payments,
+    generatedAt,
+  });
+  await writeAudit(req, {
+    tenantId: invoice.tenantId,
+    action: "INVOICE_PDF_DOWNLOADED",
+    targetType: "INVOICE",
+    targetId: invoice.id,
+    metadata: { invoiceNumber: invoice.invoiceNumber, generatedAt: generatedAt.toISOString() },
+  });
+  const safeNumber = String(invoice.invoiceNumber).replace(/[^A-Za-z0-9_-]/g, "-");
+  res.set({
+    "Content-Type": "application/pdf",
+    "Content-Disposition": `attachment; filename="${safeNumber}.pdf"`,
+    "Content-Length": String(pdf.length),
+    "Cache-Control": "private, no-store, max-age=0",
+  });
+  return res.status(200).end(pdf);
 }
 
 async function submitPayment(req, res) {
@@ -646,6 +693,7 @@ module.exports = {
   createInvoice,
   issueInvoice,
   listInvoices,
+  downloadInvoicePdf,
   submitPayment,
   verifyPayment,
   rejectPayment,

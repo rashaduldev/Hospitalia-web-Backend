@@ -38,6 +38,10 @@ async function currentTenant(req, res) {
 }
 
 async function getPublicWebsite(req, res) {
+  if (!req.tenant?.tenantId) {
+    res.set("Cache-Control", "private, no-store, max-age=0");
+    return success(res, null, "No tenant website is configured for this host");
+  }
   const tenant = await currentTenant(req, res);
   if (!tenant) return;
   const website = await ensureTenantWebsite(tenant);

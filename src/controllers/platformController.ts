@@ -251,6 +251,27 @@ async function provisionTenant(req, res) {
     });
   }
 
+  let infrastructure;
+  try {
+    infrastructure = body.provisionDomain
+      ? await assignTenantAlias(hostname)
+      : { hostname, deployment: null, aliasId: null, skipped: true };
+  } catch (err) {
+    domain.status = "FAILED";
+    await domain.save();
+    tenant.status = "PROVISIONING";
+    tenant.onboardingStatus = "IN_PROGRESS";
+    await tenant.save();
+    await writeAudit(req, {
+      tenantId: tenant.id,
+      action: "TENANT_PROVISIONING_FAILED",
+      targetType: "TENANT_DOMAIN",
+      targetId: domain.id,
+      metadata: { hostname, stage: "DOMAIN_PROVISIONING", code: err?.code || "UNKNOWN" },
+    });
+    throw err;
+  }
+
   const ownerUser = await bootstrapTenantOwner(tenant, body.owner);
 
   await Subscription.init();
@@ -302,10 +323,6 @@ async function provisionTenant(req, res) {
       await invoice.save();
     }
   }
-
-  const infrastructure = body.provisionDomain
-    ? await assignTenantAlias(hostname)
-    : { hostname, deployment: null, aliasId: null, skipped: true };
 
   domain.status = "ACTIVE";
   domain.verifiedAt = new Date();

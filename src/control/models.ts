@@ -38,6 +38,18 @@ const tenantSchema = new mongoose.Schema({
     phone: { type: String, trim: true },
   },
 }, options);
+tenantSchema.index(
+  { displayName: 1 },
+  { unique: true, collation: { locale: "en", strength: 2 }, name: "uniq_tenant_display_name_ci" },
+);
+tenantSchema.index(
+  { legalName: 1 },
+  { unique: true, collation: { locale: "en", strength: 2 }, name: "uniq_tenant_legal_name_ci" },
+);
+tenantSchema.index(
+  { primaryDomain: 1 },
+  { unique: true, sparse: true, name: "uniq_tenant_primary_domain" },
+);
 
 const tenantDomainSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true, index: true },

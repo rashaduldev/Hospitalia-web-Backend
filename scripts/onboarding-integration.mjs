@@ -90,12 +90,40 @@ try {
   if (!adminLogin.payload.accessToken) throw new Error("tenant admin token missing");
   passed += 1;
 
-  await request("completed tenant retry is idempotent", "POST", "/api/platform/tenants/provision", {
+  const duplicateTenant = await request("completed tenant retry is rejected", "POST", "/api/platform/tenants/provision", {
     token,
     body: {
       tenant: { slug: tag, legalName: "Onboarding Test Hospital Limited", displayName: "Onboarding Test Hospital", timezone: "Asia/Dhaka", currency: "BDT" },
       owner: { firstName: "Tenant", lastName: "Owner", email: `${tag}-owner@example.com`, countryCode: "+880", mobileNumber: "1603010103", temporaryPassword: ownerPassword },
       planId, billing: { collectNow: true, method: "BKASH", providerReference: "DUPLICATE" }, provisionDomain: false,
+    },
+    expected: [409],
+  });
+  if (!/already exists/i.test(duplicateTenant.message)) throw new Error("completed tenant duplicate did not return a clear conflict message");
+  passed += 1;
+
+  const duplicateName = await request("duplicate customer name is rejected", "POST", "/api/platform/tenants/provision", {
+    token,
+    body: {
+      tenant: { slug: `${tag}-other`, legalName: "Onboarding Test Hospital Limited", displayName: "Onboarding Test Hospital", timezone: "Asia/Dhaka", currency: "BDT" },
+      owner: { firstName: "Other", lastName: "Owner", email: `${tag}-other@example.com`, countryCode: "+880", mobileNumber: "1703010103", temporaryPassword: ownerPassword },
+      planId, billing: { collectNow: false, method: "BANK", providerReference: "" }, provisionDomain: false,
+    },
+    expected: [409],
+  });
+  if (!/name already exists/i.test(duplicateName.message)) throw new Error("duplicate name did not return a clear conflict message");
+  passed += 1;
+
+  await Promise.all([
+    db.collection("cp_tenants").updateOne({ id: tenantId }, { $set: { status: "PROVISIONING", onboardingStatus: "IN_PROGRESS" } }),
+    db.collection("cp_tenant_domains").updateOne({ tenantId }, { $set: { status: "FAILED" } }),
+  ]);
+  await request("incomplete tenant retry is resumable", "POST", "/api/platform/tenants/provision", {
+    token,
+    body: {
+      tenant: { slug: tag, legalName: "Onboarding Test Hospital Limited", displayName: "Onboarding Test Hospital", timezone: "Asia/Dhaka", currency: "BDT" },
+      owner: { firstName: "Tenant", lastName: "Owner", email: `${tag}-owner@example.com`, countryCode: "+880", mobileNumber: "1603010103", temporaryPassword: ownerPassword },
+      planId, billing: { collectNow: true, method: "BKASH", providerReference: "RESUME" }, provisionDomain: false,
     },
   });
   const invoices = await db.collection("cp_invoices").countDocuments({ tenantId });
@@ -112,6 +140,7 @@ try {
       db.collection("cp_payments").deleteMany({ tenantId }),
       db.collection("cp_invoices").deleteMany({ tenantId }),
       db.collection("cp_subscriptions").deleteMany({ tenantId }),
+      db.collection("cp_tenant_websites").deleteMany({ tenantId }),
       db.collection("cp_tenant_domains").deleteMany({ tenantId }),
       db.collection("cp_tenants").deleteMany({ id: tenantId }),
     ]);

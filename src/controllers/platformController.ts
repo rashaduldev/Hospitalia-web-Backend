@@ -15,10 +15,12 @@ const { platformSecret } = require("../middleware/platformAuth");
 const { success, error, paginated } = require("../utils/apiResponse");
 
 const slug = z.string().trim().toLowerCase().min(3).max(50).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+const organizationName = (max) => z.string().trim().min(2).max(max)
+  .transform((value) => value.replace(/\s+/g, " "));
 const tenantInput = z.object({
   slug,
-  legalName: z.string().trim().min(2).max(160),
-  displayName: z.string().trim().min(2).max(120),
+  legalName: organizationName(160),
+  displayName: organizationName(120),
   defaultLocale: z.string().trim().min(2).max(10).default("en"),
   timezone: z.string().trim().min(3).max(80).default("Asia/Dhaka"),
   currency: z.string().trim().toUpperCase().length(3).default("BDT"),
@@ -214,11 +216,47 @@ async function provisionTenant(req, res) {
   const body = parsed(onboardingInput, req.body, res);
   if (!body) return;
   const { Tenant, TenantDomain, Plan, Subscription, Invoice, Payment } = await controlModels();
+  await Promise.all([Tenant.init(), TenantDomain.init()]);
   const plan = await Plan.findOne({ id: body.planId, active: true }).lean();
   if (!plan) return error(res, "Active plan not found", 404);
 
   const hostname = `${body.tenant.slug}.${env.platformRootDomain}`;
-  let tenant = await Tenant.findOne({ slug: body.tenant.slug }).select("+databaseAlias");
+  const existingBySlug = await Tenant.findOne({ slug: body.tenant.slug }).select("+databaseAlias");
+  if (existingBySlug && (existingBySlug.status !== "PROVISIONING" || existingBySlug.onboardingStatus === "COMPLETED")) {
+    return error(res, "Tenant URL already exists. Choose a different tenant slug.", 409);
+  }
+  if (
+    existingBySlug
+    && (
+      existingBySlug.displayName.localeCompare(body.tenant.displayName, undefined, { sensitivity: "accent" }) !== 0
+      || existingBySlug.legalName.localeCompare(body.tenant.legalName, undefined, { sensitivity: "accent" }) !== 0
+    )
+  ) {
+    return error(res, "This tenant URL belongs to an incomplete onboarding. Retry with the original customer name.", 409);
+  }
+
+  const nameConflict = await Tenant.findOne({
+    _id: { $ne: existingBySlug?._id },
+    $or: [
+      { displayName: body.tenant.displayName },
+      { legalName: body.tenant.legalName },
+      { displayName: body.tenant.legalName },
+      { legalName: body.tenant.displayName },
+    ],
+  }).collation({ locale: "en", strength: 2 }).lean();
+  if (nameConflict) {
+    return error(res, "A customer with this display or legal name already exists.", 409);
+  }
+
+  const [tenantDomainConflict, registeredDomainConflict] = await Promise.all([
+    Tenant.findOne({ primaryDomain: hostname, _id: { $ne: existingBySlug?._id } }).lean(),
+    TenantDomain.findOne({ hostname, tenantId: { $ne: existingBySlug?.id } }).lean(),
+  ]);
+  if (tenantDomainConflict || registeredDomainConflict) {
+    return error(res, "Domain already exists. Choose a different tenant slug.", 409);
+  }
+
+  let tenant = existingBySlug;
   if (!tenant) {
     const id = crypto.randomUUID();
     tenant = await Tenant.create({

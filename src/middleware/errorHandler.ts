@@ -27,7 +27,14 @@ function errorHandler(err, req, res, _next) {
     return error(res, err.message, 422);
   }
   if (err.code === 11000) {
-    return error(res, "Duplicate record already exists", 409);
+    const duplicateFields = Object.keys(err.keyPattern || err.keyValue || {});
+    if (duplicateFields.some((field) => ["displayName", "legalName"].includes(field))) {
+      return error(res, "A customer with this display or legal name already exists.", 409);
+    }
+    if (duplicateFields.some((field) => ["slug", "primaryDomain", "hostname"].includes(field))) {
+      return error(res, "Domain already exists. Choose a different tenant slug.", 409);
+    }
+    return error(res, "Duplicate record already exists.", 409);
   }
   const message = statusCode >= 500 && env.nodeEnv === "production" && !err.expose
     ? "Internal server error"

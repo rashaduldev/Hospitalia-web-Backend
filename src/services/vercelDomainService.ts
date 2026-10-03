@@ -1,9 +1,16 @@
 const env = require("../config/env");
 
 const DOMAIN_PROVISIONING_MESSAGE = "Domain provisioning failed. Customer setup was saved and can be retried safely.";
+const DEPLOYMENT_UNAVAILABLE_MESSAGE = "Deployment link not reachable. Check the Vercel deployment and retry.";
+const DOMAIN_UNAVAILABLE_MESSAGE = "Domain unavailable. The tenant domain could not be reached, so onboarding was not completed.";
 
-function provisioningError(cause, { statusCode = 502, code = "VERCEL_DOMAIN_PROVISIONING_FAILED", context = {} } = {}) {
-  return Object.assign(new Error(DOMAIN_PROVISIONING_MESSAGE, { cause }), {
+function provisioningError(cause, {
+  statusCode = 502,
+  code = "VERCEL_DOMAIN_PROVISIONING_FAILED",
+  context = {},
+  publicMessage = DOMAIN_PROVISIONING_MESSAGE,
+} = {}) {
+  return Object.assign(new Error(publicMessage, { cause }), {
     statusCode,
     code,
     expose: true,
@@ -22,6 +29,95 @@ async function readJson(response) {
   } catch {
     return {};
   }
+}
+
+async function verifyReachable(hostname, { publicMessage, code, action }) {
+  let lastFailure;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      let response = await fetch(`https://${hostname}`, {
+        method: "HEAD",
+        redirect: "manual",
+        headers: { "User-Agent": "Hospitalia-Domain-Provisioner/1.0" },
+        signal: AbortSignal.timeout(8_000),
+      });
+      if (response.status === 405) {
+        response = await fetch(`https://${hostname}`, {
+          method: "GET",
+          redirect: "manual",
+          headers: { "User-Agent": "Hospitalia-Domain-Provisioner/1.0" },
+          signal: AbortSignal.timeout(8_000),
+        });
+      }
+      const location = response.headers.get("location");
+      const redirectsWithinDomain = response.status < 300
+        || (location && new URL(location, `https://${hostname}`).hostname === hostname);
+      if (response.status >= 200 && response.status < 400 && redirectsWithinDomain) {
+        if (response.body) await response.body.cancel();
+        return { reachable: true, status: response.status };
+      }
+      lastFailure = new Error(
+        location && !redirectsWithinDomain
+          ? `Reachability probe redirected outside the domain to ${new URL(location, `https://${hostname}`).hostname}`
+          : `Reachability probe returned HTTP ${response.status}`,
+      );
+    } catch (err) {
+      lastFailure = err;
+    }
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+  }
+  throw provisioningError(lastFailure || new Error("Reachability probe failed"), {
+    code,
+    publicMessage,
+    context: { action, hostname },
+  });
+}
+
+async function resolveReadyDeployment(configuredDeployment, hostname) {
+  const sourceLookup = await fetch(
+    `https://api.vercel.com/v4/aliases/${encodeURIComponent(configuredDeployment)}${teamQuery()}`,
+    { headers: { Authorization: `Bearer ${env.vercelApiToken}` }, signal: AbortSignal.timeout(15_000) },
+  );
+  const source = await readJson(sourceLookup);
+  const deploymentId = source?.deployment?.id || source?.deploymentId;
+  const deployment = source?.deployment?.url;
+  if (!sourceLookup.ok || !deploymentId || !deployment) {
+    const message = source?.error?.message || source?.message || "Configured Vercel deployment alias was not found";
+    throw provisioningError(new Error(message), {
+      code: "VERCEL_SOURCE_DEPLOYMENT_NOT_FOUND",
+      publicMessage: DEPLOYMENT_UNAVAILABLE_MESSAGE,
+      context: { action: "source-lookup", hostname, configuredDeployment, vercelStatus: sourceLookup.status },
+    });
+  }
+
+  const statusResponse = await fetch(
+    `https://api.vercel.com/v13/deployments/${encodeURIComponent(deploymentId)}${teamQuery()}`,
+    { headers: { Authorization: `Bearer ${env.vercelApiToken}` }, signal: AbortSignal.timeout(15_000) },
+  );
+  const status = await readJson(statusResponse);
+  if (!statusResponse.ok || status?.readyState !== "READY" || status?.status !== "READY") {
+    const message = status?.error?.message || status?.message || `Deployment state is ${status?.readyState || status?.status || "unknown"}`;
+    throw provisioningError(new Error(message), {
+      code: "VERCEL_SOURCE_DEPLOYMENT_NOT_READY",
+      publicMessage: DEPLOYMENT_UNAVAILABLE_MESSAGE,
+      context: {
+        action: "deployment-status",
+        hostname,
+        configuredDeployment,
+        deploymentId,
+        readyState: status?.readyState,
+        deploymentStatus: status?.status,
+        vercelStatus: statusResponse.status,
+      },
+    });
+  }
+
+  const reachability = await verifyReachable(configuredDeployment, {
+    publicMessage: DEPLOYMENT_UNAVAILABLE_MESSAGE,
+    code: "VERCEL_SOURCE_DEPLOYMENT_UNREACHABLE",
+    action: "source-reachability",
+  });
+  return { deployment, deploymentId, sourceReachabilityStatus: reachability.status };
 }
 
 async function ensurePublicAlias(hostname) {
@@ -50,6 +146,7 @@ async function ensurePublicAlias(hostname) {
     const message = data?.error?.message || data?.message || "Vercel could not make the tenant domain public";
     throw provisioningError(new Error(message), {
       code: "VERCEL_ALIAS_PUBLIC_ACCESS_FAILED",
+      publicMessage: DOMAIN_UNAVAILABLE_MESSAGE,
       context: { action: "protection-bypass", hostname, vercelStatus: response.status },
     });
   }
@@ -69,15 +166,7 @@ async function assignTenantAlias(hostname) {
     const configuredDeployment = env.vercelFrontendDeployment
       .replace(/^https?:\/\//, "")
       .replace(/\/$/, "");
-    let deployment = configuredDeployment;
-    const sourceLookup = await fetch(
-      `https://api.vercel.com/v4/aliases/${encodeURIComponent(configuredDeployment)}${teamQuery()}`,
-      { headers: { Authorization: `Bearer ${env.vercelApiToken}` }, signal: AbortSignal.timeout(15_000) },
-    );
-    if (sourceLookup.ok) {
-      const source = await readJson(sourceLookup);
-      deployment = source?.deployment?.url || configuredDeployment;
-    }
+    const { deployment, deploymentId, sourceReachabilityStatus } = await resolveReadyDeployment(configuredDeployment, hostname);
     const response = await fetch(
       `https://api.vercel.com/v2/deployments/${encodeURIComponent(deployment)}/aliases${teamQuery()}`,
       {
@@ -102,21 +191,51 @@ async function assignTenantAlias(hostname) {
         throw provisioningError(new Error(message), {
           statusCode: 409,
           code: "VERCEL_ALIAS_CONFLICT",
+          publicMessage: "Domain unavailable. This domain is already assigned to another deployment.",
           context: { action: "assign-alias", hostname, deployment, vercelStatus: response.status },
         });
       }
       await ensurePublicAlias(hostname);
-      return { hostname, deployment, aliasId: current.uid || null, alreadyAssigned: true, publicAccess: true };
+      const reachability = await verifyReachable(hostname, {
+        publicMessage: DOMAIN_UNAVAILABLE_MESSAGE,
+        code: "VERCEL_TENANT_DOMAIN_UNREACHABLE",
+        action: "tenant-domain-reachability",
+      });
+      return {
+        hostname,
+        deployment,
+        deploymentId,
+        aliasId: current.uid || null,
+        alreadyAssigned: true,
+        publicAccess: true,
+        sourceReachabilityStatus,
+        reachabilityStatus: reachability.status,
+      };
     }
     if (!response.ok) {
       const message = data?.error?.message || data?.message || "Vercel could not assign the tenant domain";
       throw provisioningError(new Error(message), {
         code: "VERCEL_ALIAS_ASSIGNMENT_FAILED",
+        publicMessage: DOMAIN_UNAVAILABLE_MESSAGE,
         context: { action: "assign-alias", hostname, deployment, vercelStatus: response.status },
       });
     }
     await ensurePublicAlias(hostname);
-    return { hostname, deployment, aliasId: data.uid || null, alreadyAssigned: false, publicAccess: true };
+    const reachability = await verifyReachable(hostname, {
+      publicMessage: DOMAIN_UNAVAILABLE_MESSAGE,
+      code: "VERCEL_TENANT_DOMAIN_UNREACHABLE",
+      action: "tenant-domain-reachability",
+    });
+    return {
+      hostname,
+      deployment,
+      deploymentId,
+      aliasId: data.uid || null,
+      alreadyAssigned: false,
+      publicAccess: true,
+      sourceReachabilityStatus,
+      reachabilityStatus: reachability.status,
+    };
   } catch (err) {
     if (err?.expose) throw err;
     throw provisioningError(err, {
